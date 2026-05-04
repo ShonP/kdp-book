@@ -1,0 +1,102 @@
+"""BibleAgent — concept + outline → characters, locations, style guide.
+
+The bible is the cross-cutting input every later prompt references.
+Identity-locking sheets here become the canonical text inputs that get
+rendered into reference images during the illustration phase.
+"""
+
+from __future__ import annotations
+
+from agent_framework import Agent
+
+from kdp_book.client import get_chat_client
+from kdp_book.middleware import llm_call_logging
+from kdp_book.models.book import (
+    IBookBible,
+    IBookConcept,
+    IBookOutline,
+    IBookTypeConfig,
+)
+
+SYSTEM_PROMPT = """\
+You are an art director and continuity editor. From the concept and
+outline, produce a reusable "bible" that downstream writing and
+illustration steps will consume.
+
+Rules:
+- characters: 3-8 named entities. For each, give:
+    * name (short, distinctive)
+    * role ("protagonist", "best friend", "antagonist", etc.)
+    * age (concrete: "8 years old" / "early 20s" / "ancient")
+    * appearance: face shape, hair color/length, skin tone, eye color,
+      build. Concrete and visualizable.
+    * costume: outfit they wear by default — fabric, color, signature
+      detail.
+    * palette: 3-5 hex colors that define their visual identity.
+    * personality: 1 sentence.
+    * voice: 1 short phrase capturing how they speak.
+    * arc: their narrative trajectory in this book (1 sentence).
+- locations: 2-6 named recurring places. Each has:
+    * name, description (concrete sensory: light, materials, scale).
+    * palette: 3-5 hex colors.
+    * mood: 1 phrase.
+- style_guide: a single object capturing the cross-cutting visual style.
+    * art_style: 1 phrase ("watercolor children's-book", "shounen manga
+      ink + grey wash", "minimalist tech illustration").
+    * palette: 4-6 dominant colors as hex.
+    * line_weight: "thin" / "medium" / "bold" / "varied" / etc.
+    * lighting: "soft diffuse" / "high-contrast" / "golden-hour" / etc.
+    * tone: 1 phrase capturing the emotional atmosphere.
+    * inspirations: 2-3 concrete reference works ("in the style of X").
+
+Only mention every named character/location that appears in the outline.
+Do not invent characters not present in the chapter summaries.
+"""
+
+
+def _flatten_outline(outline: IBookOutline) -> str:
+    lines: list[str] = []
+    for ch in outline.chapters:
+        lines.append(f"Chapter {ch.index}: {ch.title} — {ch.summary}")
+        for sc in ch.scenes:
+            chars = ", ".join(sc.characters) if sc.characters else "(none)"
+            lines.append(f"  Scene {sc.index}: {sc.title} | setting={sc.setting} | chars={chars}")
+    return "\n".join(lines)
+
+
+def _build_user_prompt(
+    concept: IBookConcept,
+    outline: IBookOutline,
+    cfg: IBookTypeConfig,
+) -> str:
+    return (
+        f"Title: {concept.title}\n"
+        f"Hook: {concept.hook}\n"
+        f"Audience: {concept.audience}\n"
+        f"Tone: {concept.tone}\n"
+        f"Book type: {cfg.trim_size.value}, target pages ~{cfg.target_pages}\n\n"
+        "Outline:\n"
+        f"{_flatten_outline(outline)}\n\n"
+        "Produce the structured bible."
+    )
+
+
+async def generate_bible(
+    *,
+    concept: IBookConcept,
+    outline: IBookOutline,
+    type_config: IBookTypeConfig,
+) -> IBookBible:
+    agent = Agent(
+        client=get_chat_client(),
+        name="bible-agent",
+        instructions=SYSTEM_PROMPT,
+        middleware=[llm_call_logging],
+    )
+    response = await agent.run(
+        _build_user_prompt(concept, outline, type_config),
+        options={"response_format": IBookBible},
+    )
+    if response.value is None:
+        raise RuntimeError("Bible agent returned no structured value")
+    return response.value
