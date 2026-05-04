@@ -43,6 +43,7 @@ from kdp_book.workflow.steps import (  # noqa: E402
     do_bible,
     do_characters,
     do_concept,
+    do_cover,
     do_edit,
     do_illustrate,
     do_images,
@@ -138,9 +139,9 @@ async def step_consistency(state: IBookState) -> IBookState:
 
 @step
 async def step_cover(state: IBookState) -> IBookState:
-    log.info("Step cover: not yet implemented (Phase 6)")
+    log.info("Step cover: design + render + compose wrap")
     with _record(state, "cover"):
-        state.mark_done("cover")
+        state = await do_cover(state)
         save_state(state)
     return state
 

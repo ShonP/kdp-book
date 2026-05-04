@@ -457,3 +457,114 @@ def _content_rating(state: IBookState) -> str:
         BookType.NON_FICTION: "all-ages",
         BookType.FICTION_NOVEL: "teen",
     }.get(state.config.book_type, "all-ages")
+
+
+async def do_cover(state: IBookState) -> IBookState:
+    """Design + render front (and optional back) cover, then compose the wrap."""
+    from kdp_book.agents.cover import design_cover
+    from kdp_book.formats.cover_compositor import compose_cover_wrap
+    from kdp_book.formats.cover_geometry import cover_dimensions
+
+    if state.concept is None or state.bible is None:
+        raise RuntimeError("Cannot design cover before concept + bible")
+    if state.cover is not None and "cover" in state.completed_steps:
+        log.debug("Cover already done, skipping")
+        return state
+
+    book_dir = Path(state.book_dir)
+    cover_dir = book_dir / "cover"
+    cover_dir.mkdir(parents=True, exist_ok=True)
+
+    if state.cover is None:
+        state.cover = await design_cover(
+            concept=state.concept,
+            bible=state.bible,
+            metadata=state.metadata,
+        )
+
+    rating = _content_rating(state)
+    front_path = cover_dir / "front.png"
+    if not front_path.exists():
+        log.info("Rendering front cover")
+        img_bytes, retry_meta = render_with_retry(
+            prompt=state.cover.front_prompt,
+            references=None,
+            size=state.config.type_config.image_size,
+            quality="high",
+            content_rating=rating,
+        )
+        atomic_write_bytes(front_path, img_bytes)
+        rec = make_image_record(
+            asset_type="cover_front",
+            name="cover/front",
+            path=str(front_path),
+            prompt=state.cover.front_prompt,
+            references=[],
+            model="gpt-image-2",
+            size=state.config.type_config.image_size,
+            quality="high",
+            retry_count=len(retry_meta.get("retries", [])),
+            safety_filter_hits=retry_meta.get("safety_filter_hits", 0),
+            duration_seconds=retry_meta.get("duration_seconds", 0.0),
+        )
+        write_image_sidecar(front_path, rec)
+        record_image(rec)
+    state.cover.front_image_path = str(front_path.relative_to(book_dir))
+
+    back_path: Path | None = None
+    if state.cover.back_prompt:
+        back_path = cover_dir / "back.png"
+        if not back_path.exists():
+            log.info("Rendering back cover")
+            try:
+                img_bytes, retry_meta = render_with_retry(
+                    prompt=state.cover.back_prompt,
+                    references=None,
+                    size=state.config.type_config.image_size,
+                    quality="high",
+                    content_rating=rating,
+                )
+                atomic_write_bytes(back_path, img_bytes)
+                rec = make_image_record(
+                    asset_type="cover_back",
+                    name="cover/back",
+                    path=str(back_path),
+                    prompt=state.cover.back_prompt,
+                    references=[],
+                    model="gpt-image-2",
+                    size=state.config.type_config.image_size,
+                    quality="high",
+                    retry_count=len(retry_meta.get("retries", [])),
+                    safety_filter_hits=retry_meta.get("safety_filter_hits", 0),
+                    duration_seconds=retry_meta.get("duration_seconds", 0.0),
+                )
+                write_image_sidecar(back_path, rec)
+                record_image(rec)
+            except RuntimeError as e:
+                log.warning("Back cover render failed (%s); falling back to solid back", e)
+                back_path = None
+        if back_path is not None and back_path.exists():
+            state.cover.back_image_path = str(back_path.relative_to(book_dir))
+
+    pages = state.config.type_config.target_pages
+    dims = cover_dimensions(
+        trim=state.config.type_config.trim_size,
+        paper=state.config.type_config.paper_type,
+        pages=pages,
+    )
+    composed = cover_dir / "wrap.png"
+    spine_text = state.cover.spine_text or f"{state.concept.title} - {state.config.author}"
+    compose_cover_wrap(
+        front_png=front_path,
+        back_png=back_path,
+        title=state.concept.title,
+        subtitle=state.concept.subtitle,
+        author=state.config.author,
+        spine_text=spine_text,
+        palette=state.cover.palette,
+        dimensions=dims,
+        output_path=composed,
+    )
+    state.cover.composed_path = str(composed.relative_to(book_dir))
+    state.mark_done("cover")
+    return state

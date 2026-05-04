@@ -297,8 +297,41 @@ def format(from_slug: str, output: str) -> None:
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 def cover(from_slug: str) -> None:
-    """Render cover (Phase 6)."""
-    click.echo("cover: not yet implemented (Phase 6)")
+    """Design + render + compose the print-ready cover wrap."""
+    asyncio.run(_run_cover(from_slug))
+
+
+async def _run_cover(slug: str) -> None:
+    from kdp_book.workflow.steps import do_cover
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "cover"):
+            state = await do_cover(state)
+            save_state(state)
+        click.echo(click.style(
+            f"\nCover composed: {state.cover.composed_path}",
+            fg="green",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
 
 
 @main.command()
