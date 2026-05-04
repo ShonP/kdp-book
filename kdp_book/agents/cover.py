@@ -54,11 +54,12 @@ back_prompt
   • Render the EXACT blurb text (provided below), word-for-word, as
     typeset back-cover copy — left-aligned, ~3-5 short paragraphs,
     refined readable face, dark on light or light on dark per palette.
-  • Reserve a clean light rectangle in the bottom-right corner about
-    1.5"×1" (called out in the prompt) for the printed barcode — no text
-    in that area.
   • DO NOT render the author name or any author credit anywhere on the
     back cover.
+  • DO NOT reserve, draw, sketch, or hint at any barcode area, ISBN
+    box, white/light rectangle, placeholder rectangle, blank panel, or
+    "barcode goes here" zone — Amazon KDP overprints the barcode after
+    upload, so the back panel must look like a finished illustration.
   • Background should be quiet — typically a tinted color wash, soft
     pattern, or motif from the front. NO duplicate scene illustration.
 
@@ -81,8 +82,9 @@ CRITICAL
   the prompt so gpt-image-2 renders them verbatim.
 - Do NOT include the author name in front_prompt or back_prompt.
 - Do NOT include placeholder tokens like "[TITLE]" or "(insert blurb)".
-- Do NOT ask for borders, page numbers, watermarks, or KDP/ISBN logos —
-  the publisher prints those over the wrap.
+- Do NOT ask for borders, page numbers, watermarks, KDP/ISBN logos, or
+  barcode placeholders/rectangles — the publisher prints those over the
+  wrap.
 """
 
 
