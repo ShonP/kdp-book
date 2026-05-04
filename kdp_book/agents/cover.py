@@ -1,4 +1,11 @@
-"""CoverAgent — designs front, spine, and back cover prompts + typography."""
+"""CoverAgent — produces cover prompts that bake title/author typography
+directly into the generated artwork.
+
+The compositor only stitches the front + spine + back into a print-ready
+wrap; gpt-image-2 handles the typography end-to-end so the title, subtitle,
+and author name are integrated into the illustration rather than overlaid
+afterward.
+"""
 
 from __future__ import annotations
 
@@ -16,26 +23,66 @@ from kdp_book.models.book import (
 from kdp_book.observability import record_output, record_prompt
 
 SYSTEM_PROMPT = """You are a senior cover designer for self-published KDP books.
-Given a book concept, the bible (style guide), and a metadata blurb,
-produce a structured ICoverDesign.
+You write image prompts for gpt-image-2 that render PRINT-READY cover panels
+WITH typography baked into the artwork — no separate text overlay step.
 
-DESIGN RULES
-- front_prompt: a complete image prompt for the FRONT cover only.
-  Composition-only — no character face descriptions (a separate render
-  step references locked character images). Describe scene, palette,
-  lighting, mood. Single illustration filling the frame. NO TEXT in
-  the rendered image — title and author will be overlaid in code.
-- back_prompt: optional. Either an extension of the front (full wrap art)
-  or empty if the cover should be solid color on the back. If provided,
-  it should compose with the front.
-- spine_text: short text — usually "TITLE — AUTHOR".
-- typography_notes: 1-2 sentences on font feel ("warm rounded serif,
-  high-contrast title in cream against deep brown").
-- palette: 3-5 hex colors that anchor the cover (front/back/spine all
-  pull from this).
+OUTPUT — ICoverDesign
 
-NEVER include text, captions, watermarks, page numbers, or borders in
-the rendered image — typography is overlaid by the compositor."""
+front_prompt
+  A complete image prompt for the FRONT cover panel.
+  REQUIREMENTS the prompt MUST instruct the renderer to do:
+  • Render the exact title text (provided below) prominently and beautifully
+    integrated into the artwork — describe the typography (e.g. "warm hand-
+    lettered serif, cream against deep brown, slight letter-press texture",
+    or "bold rounded sans-serif in glowing gold with a thin outline").
+  • Render the exact subtitle text below the title, smaller, in a
+    complementary face. Skip if there is no subtitle.
+  • Render the exact author name centered near the bottom, in a refined
+    smaller face that matches the title's mood.
+  • Describe the illustration: scene, palette, lighting, mood, composition.
+    Leave space at the top for the title and at the bottom for the author —
+    use phrases like "title area at the top one-third", "author panel
+    across the bottom margin".
+  • Ask for a single bleed-safe illustration filling the frame, no margins,
+    no white space, no borders.
+  • Specify aesthetic for the chosen book type (children's picture book →
+    warm watercolor or gouache; light novel → manga / anime; non-fiction →
+    bold geometric flat illustration; fiction novel → painterly cinematic).
+
+back_prompt
+  Image prompt for the BACK cover panel. The renderer must:
+  • Continue the front's palette and aesthetic (so they read as one wrap).
+  • Render the EXACT blurb text (provided below), word-for-word, as
+    typeset back-cover copy — left-aligned, ~3-5 short paragraphs,
+    refined readable face, dark on light or light on dark per palette.
+  • Reserve a clean light rectangle in the bottom-right corner about
+    1.5"×1" (called out in the prompt) for the printed barcode — no text
+    in that area.
+  • Author byline can repeat at the very top of the back panel.
+  • Background should be quiet — typically a tinted color wash, soft
+    pattern, or motif from the front. NO duplicate scene illustration.
+
+spine_text
+  Short string: "TITLE — AUTHOR" (ellipsized to fit a narrow spine).
+  This will be rendered programmatically by the compositor (the spine is
+  usually too narrow for gpt-image-2 to render legible text directly).
+
+typography_notes
+  1-2 sentence summary of the typographic feel. Used by the compositor
+  for spine text styling.
+
+palette
+  3-5 hex colors that anchor the cover. Front + spine + back pull from
+  this palette.
+
+CRITICAL
+- The front_prompt and back_prompt MUST quote the exact title, subtitle,
+  author name, and blurb text the user provides. Wrap each in quotation
+  marks inside the prompt so gpt-image-2 renders them verbatim.
+- Do NOT include placeholder tokens like "[TITLE]" or "(insert blurb)".
+- Do NOT ask for borders, page numbers, watermarks, or KDP/ISBN logos —
+  the publisher prints those over the wrap.
+"""
 
 
 def _build_user_prompt(
@@ -43,6 +90,8 @@ def _build_user_prompt(
     concept: IBookConcept,
     bible: IBookBible,
     metadata: IBookMetadata | None,
+    author: str,
+    book_type: str,
 ) -> str:
     style = bible.style_guide
     blurb = metadata.blurb if metadata else concept.hook
@@ -50,16 +99,20 @@ def _build_user_prompt(
         f"BOOK\n"
         f"Title: {concept.title}\n"
         f"Subtitle: {concept.subtitle}\n"
+        f"Author: {author}\n"
+        f"Book type: {book_type}\n"
         f"Audience: {concept.audience}\n"
         f"Tone: {concept.tone}\n"
         f"Themes: {', '.join(concept.themes) or 'n/a'}\n"
-        f"Blurb: {blurb}\n\n"
+        f"Blurb (verbatim — must appear on back cover):\n{blurb}\n\n"
         f"STYLE GUIDE\n"
         f"Art style: {style.art_style}\n"
         f"Tone: {style.tone}\n"
         f"Lighting: {style.lighting}\n"
         f"Palette: {', '.join(style.palette) or 'designer choice'}\n\n"
-        f"Produce an ICoverDesign now."
+        f"Produce an ICoverDesign whose front_prompt and back_prompt instruct "
+        f"gpt-image-2 to RENDER the title, subtitle, author, and blurb text "
+        f"directly into the artwork (no separate overlay)."
     )
 
 
@@ -68,8 +121,16 @@ async def design_cover(
     concept: IBookConcept,
     bible: IBookBible,
     metadata: IBookMetadata | None = None,
+    author: str,
+    book_type: str,
 ) -> ICoverDesign:
-    user_prompt = _build_user_prompt(concept=concept, bible=bible, metadata=metadata)
+    user_prompt = _build_user_prompt(
+        concept=concept,
+        bible=bible,
+        metadata=metadata,
+        author=author,
+        book_type=book_type,
+    )
     model = get_settings().copilot_model
     record_prompt(
         agent_name="cover-agent",

@@ -1,9 +1,13 @@
 """Cover compositor — Pillow-based front/spine/back wrap assembly.
 
-The cover-agent + image-gen pipeline produces front (and optionally back)
-illustrations. This module composes them into a single print-ready PDF
-wrap with KDP-spec spine width and bleed, and overlays title/author/spine
-text in the configured palette.
+The cover-agent + image-gen pipeline produces a FRONT and BACK panel that
+already contain title/subtitle/author/blurb typography baked into the
+artwork (gpt-image-2 handles typography). This module's only job is to:
+
+1. Stitch front + spine column + back into one print-ready bleed canvas.
+2. Render the spine text programmatically — gpt-image-2 cannot render
+   small text cleanly inside the narrow spine column, so we draw it with
+   Pillow on a tinted strip taken from the cover palette.
 """
 
 from __future__ import annotations
@@ -49,21 +53,26 @@ def compose_cover_wrap(
     *,
     front_png: Path,
     back_png: Path | None,
-    title: str,
-    subtitle: str,
-    author: str,
     spine_text: str,
     palette: list[str],
     dimensions: ICoverDimensions,
     output_path: Path,
 ) -> Path:
-    """Assemble a print-ready cover wrap PNG (and PDF) at the given path."""
+    """Assemble a print-ready cover wrap PNG (and PDF) at the given path.
+
+    Front and back PNGs are pasted as-is — they already contain rendered
+    typography from gpt-image-2. The only programmatic text drawn here is
+    the spine.
+    """
     total_w_px, total_h_px = dimensions.at_dpi(DPI)
 
-    bg = _hex_to_rgb(palette[0] if palette else "#fffaf0")
-    accent = _hex_to_rgb(palette[1] if len(palette) > 1 else "#3b2a1a", fallback=(60, 40, 20))
+    spine_bg = _hex_to_rgb(palette[0] if palette else "#fffaf0")
+    spine_fg = _hex_to_rgb(
+        palette[1] if len(palette) > 1 else "#3b2a1a",
+        fallback=(60, 40, 20),
+    )
 
-    canvas = Image.new("RGB", (total_w_px, total_h_px), bg)
+    canvas = Image.new("RGB", (total_w_px, total_h_px), spine_bg)
 
     bleed_px = round(dimensions.bleed_in * DPI)
     trim_w_px = round(dimensions.trim_width_in * DPI)
@@ -75,12 +84,12 @@ def compose_cover_wrap(
     spine_x = back_x + trim_w_px
     front_x = spine_x + spine_w_px
 
-    # Front art
+    # Front art (text already baked into the image)
     front = Image.open(front_png).convert("RGB")
     front_resized = front.resize((trim_w_px + bleed_px, trim_h_px + 2 * bleed_px))
     canvas.paste(front_resized, (front_x, 0))
 
-    # Back art (or solid)
+    # Back art (or solid spine_bg)
     if back_png and back_png.exists():
         back = Image.open(back_png).convert("RGB")
         back_resized = back.resize((trim_w_px + bleed_px, trim_h_px + 2 * bleed_px))
@@ -88,40 +97,17 @@ def compose_cover_wrap(
     else:
         ImageDraw.Draw(canvas).rectangle(
             [0, 0, back_x + trim_w_px, total_h_px],
-            fill=bg,
+            fill=spine_bg,
         )
 
-    # Title overlay on front (top quarter)
-    draw = ImageDraw.Draw(canvas)
-    title_size = max(48, int(trim_h_px * 0.07))
-    subtitle_size = max(28, int(title_size * 0.45))
-    author_size = max(28, int(title_size * 0.5))
-
-    title_font = _load_font(title_size)
-    subtitle_font = _load_font(subtitle_size)
-    author_font = _load_font(author_size)
-
-    # Title — centered horizontally inside the front area, near the top.
-    title_y = bleed_px + int(trim_h_px * 0.07)
-    _draw_centered(draw, title, title_font, accent, x_center=front_x + trim_w_px // 2, y=title_y)
-
-    if subtitle:
-        sub_y = title_y + title_size + int(title_size * 0.2)
-        _draw_centered(
-            draw, subtitle, subtitle_font, accent,
-            x_center=front_x + trim_w_px // 2, y=sub_y,
-        )
-
-    # Author — bottom of front
-    author_y = bleed_px + trim_h_px - author_size - int(trim_h_px * 0.08)
-    _draw_centered(
-        draw, author, author_font, accent,
-        x_center=front_x + trim_w_px // 2, y=author_y,
+    # Spine column gets a tinted strip in the palette so the programmatic
+    # text reads cleanly even when the front/back images bleed into it.
+    ImageDraw.Draw(canvas).rectangle(
+        [spine_x, 0, spine_x + spine_w_px, total_h_px],
+        fill=spine_bg,
     )
-
-    # Spine text (vertical) — only if spine is wide enough
     if spine_w_px > 60 and spine_text:
-        _draw_spine(canvas, spine_text, spine_x, spine_w_px, total_h_px, accent)
+        _draw_spine(canvas, spine_text, spine_x, spine_w_px, total_h_px, spine_fg)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="PNG", dpi=(DPI, DPI))
@@ -132,20 +118,6 @@ def compose_cover_wrap(
         output_path, total_w_px, total_h_px, DPI, dimensions.spine_width_in,
     )
     return output_path
-
-
-def _draw_centered(
-    draw: ImageDraw.ImageDraw,
-    text: str,
-    font: ImageFont.ImageFont,
-    color: tuple[int, int, int],
-    *,
-    x_center: int,
-    y: int,
-) -> None:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    width = bbox[2] - bbox[0]
-    draw.text((x_center - width // 2, y), text, fill=color, font=font)
 
 
 def _draw_spine(

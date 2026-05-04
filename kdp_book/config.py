@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     azure_storage_container: str = "kdp-books"
 
     kdp_books_dir: Path = Path("books")
-    kdp_author_name: str = "Anonymous"
+    kdp_author_name: str = "Shon Pazarker"
     min_review_score: int = 7
     max_safety_retries: int = 5
 

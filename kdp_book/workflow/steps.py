@@ -572,6 +572,8 @@ async def do_cover(state: IBookState) -> IBookState:
             concept=state.concept,
             bible=state.bible,
             metadata=state.metadata,
+            author=state.config.author,
+            book_type=state.config.book_type.value,
         )
 
     settings = get_settings()
@@ -644,13 +646,10 @@ async def do_cover(state: IBookState) -> IBookState:
         pages=pages,
     )
     composed = cover_dir / "wrap.png"
-    spine_text = state.cover.spine_text or f"{state.concept.title} - {state.config.author}"
+    spine_text = state.cover.spine_text or f"{state.concept.title} — {state.config.author}"
     compose_cover_wrap(
         front_png=front_path,
         back_png=back_path,
-        title=state.concept.title,
-        subtitle=state.concept.subtitle,
-        author=state.config.author,
         spine_text=spine_text,
         palette=state.cover.palette,
         dimensions=dims,
