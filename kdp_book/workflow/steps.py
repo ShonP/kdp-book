@@ -428,6 +428,10 @@ async def do_images(state: IBookState) -> IBookState:
     quality = settings.image_quality
     size = state.config.type_config.image_size
 
+    chapter_prose_by_index = {
+        c.index: (c.prose or "") for c in (state.manuscript.chapters if state.manuscript else [])
+    }
+
     pending: list[tuple[int, IIllustrationBrief, list[Path]]] = []
     for brief in state.illustrations:
         key = (brief.chapter_index, brief.scene_index)
@@ -459,10 +463,13 @@ async def do_images(state: IBookState) -> IBookState:
     sem = asyncio.Semaphore(workers)
 
     async def render_one(page_index: int, brief: IIllustrationBrief, refs: list[Path]):
+        page_text = chapter_prose_by_index.get(brief.chapter_index, "")
         prompt = build_scene_prompt(
             brief=brief,
             style=state.bible.style_guide,
             concept=state.concept,
+            book_type=state.config.book_type,
+            page_text=page_text,
         )
         log.info(
             "Rendering page %d (chapter %d, scene %d) with %d refs",

@@ -29,7 +29,7 @@ from kdp_book.formats.typography import (
     typography_for,
 )
 from kdp_book.log import log
-from kdp_book.models.book import IBookState
+from kdp_book.models.book import BookType, IBookState
 
 
 def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
@@ -131,25 +131,29 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
     story.append(PageBreak())
 
     images_by_chapter = _index_images(state)
+    is_picture_book = state.config.book_type == BookType.CHILDREN_PICTURE_BOOK
 
     for chapter in state.manuscript.chapters:
         story.append(Paragraph(_escape(chapter.title), chapter_title_style))
         story.append(Spacer(1, typography.body_pt * 1.2))
 
-        # Chapter art (first image of the chapter, if any)
+        # Chapter art (first image of the chapter, if any).
+        # For picture books the prose is baked into the image, so we render
+        # the illustration full-width and skip the separate prose block.
         if state.config.type_config.illustrations_per_chapter > 0:
             for img_path in images_by_chapter.get(chapter.index, [])[:1]:
                 full = book_dir / img_path
                 if full.exists():
-                    fig_w = frame_w * 0.85
+                    fig_w = frame_w * (1.0 if is_picture_book else 0.85)
                     story.append(Image(str(full), width=fig_w, height=fig_w))
                     story.append(Spacer(1, typography.body_pt))
 
-        for para in (chapter.prose or "").split("\n\n"):
-            text = para.strip()
-            if not text:
-                continue
-            story.append(Paragraph(_escape(text), body_style))
+        if not is_picture_book:
+            for para in (chapter.prose or "").split("\n\n"):
+                text = para.strip()
+                if not text:
+                    continue
+                story.append(Paragraph(_escape(text), body_style))
         story.append(PageBreak())
 
     doc.build(story)
