@@ -362,7 +362,7 @@ async def do_characters(state: IBookState) -> IBookState:
                     content_rating=rating,
                 )
             except RuntimeError as e:
-                log.error("Failed to render character %s: %s", character.name, e)
+                log.exception("Failed to render character %s: %s", character.name, e)
                 return None
 
         out_path = character_image_path(book_dir, character.name, "default")
@@ -486,7 +486,7 @@ async def do_images(state: IBookState) -> IBookState:
                     content_rating=rating,
                 )
             except RuntimeError as e:
-                log.error(
+                log.exception(
                     "Failed to render page %d (ch%d sc%d): %s",
                     page_index, brief.chapter_index, brief.scene_index, e,
                 )
@@ -579,7 +579,6 @@ async def do_cover(state: IBookState) -> IBookState:
             concept=state.concept,
             bible=state.bible,
             metadata=state.metadata,
-            author=state.config.author,
             book_type=state.config.book_type.value,
         )
 
@@ -605,7 +604,7 @@ async def do_cover(state: IBookState) -> IBookState:
                 content_rating=rating,
             )
         except RuntimeError as e:
-            log.warning("%s cover render failed: %s", panel.title(), e)
+            log.exception("%s cover render failed: %s", panel.title(), e)
             return None, None, None
         atomic_write_bytes(dest, img_bytes)
         rec = make_image_record(

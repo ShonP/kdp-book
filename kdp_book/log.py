@@ -44,7 +44,12 @@ class ColorFormatter(logging.Formatter):
         lc = LEVEL_COLORS.get(record.levelno, "")
         label = LEVEL_LABELS.get(record.levelno, "???")
         rid_str = f" {MAGENTA}[{rid}]{RESET}" if rid else ""
-        return f"{GRAY}{ts}{RESET}{rid_str} {lc}{label}{RESET} {record.getMessage()}"
+        head = f"{GRAY}{ts}{RESET}{rid_str} {lc}{label}{RESET} {record.getMessage()}"
+        if record.exc_info:
+            head += "\n" + self.formatException(record.exc_info)
+        if record.stack_info:
+            head += "\n" + self.formatStack(record.stack_info)
+        return head
 
 
 class FileFormatter(logging.Formatter):
@@ -53,7 +58,12 @@ class FileFormatter(logging.Formatter):
         rid = _run_id.get()
         label = LEVEL_LABELS.get(record.levelno, "???")
         rid_str = f" [{rid}]" if rid else ""
-        return f"{ts}{rid_str} {label} {record.getMessage()}"
+        head = f"{ts}{rid_str} {label} {record.getMessage()}"
+        if record.exc_info:
+            head += "\n" + self.formatException(record.exc_info)
+        if record.stack_info:
+            head += "\n" + self.formatStack(record.stack_info)
+        return head
 
 
 _console = logging.StreamHandler(sys.stdout)

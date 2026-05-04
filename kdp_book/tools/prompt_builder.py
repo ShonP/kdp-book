@@ -23,12 +23,22 @@ from kdp_book.models.book import (
 # Single source of truth for picture-book typography. Repeated verbatim in
 # every page prompt so gpt-image-2 keeps the same face across all pages.
 PICTURE_BOOK_TEXT_TYPOGRAPHY = (
-    "warm hand-lettered rounded storybook serif, large and child-friendly, "
-    "creamy off-white text with a soft dark outline for readability, "
-    "letters slightly hand-painted to feel cozy. Use this exact same "
-    "typography on every page of the book — same face, same color, same "
-    "weight, same size, same gentle outline — so the typography reads as "
-    "one consistent voice throughout."
+    "FIXED TYPOGRAPHY (must be IDENTICAL on every single page of the book — "
+    "do not vary face, weight, size, color, or treatment): "
+    "rounded storybook serif (a slightly bold, friendly children's serif "
+    "such as Mrs Eaves Bold or a similar warm rounded serif). "
+    "Approx 18-20pt equivalent. "
+    "Letter-spacing: relaxed. Letter-shape: hand-painted but consistent — "
+    "NOT calligraphy, NOT brush script, NOT sans-serif. "
+    "Color: deep brown ink (#3E2723). "
+    "Background behind the text: a soft cream/parchment wash (#FFF8E7) just "
+    "barely tinted, sized as a quiet rectangle large enough that NO letters "
+    "are crowded by illustration elements. "
+    "Treatment: NO outline, NO drop shadow, NO border, NO glow, NO stroke, "
+    "NO 3D effect, NO bold/italic mixing. Plain dark-brown letters on the "
+    "soft cream panel. "
+    "Use this exact same typography on every page so the typography reads "
+    "as one consistent voice throughout the book."
 )
 
 

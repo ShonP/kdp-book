@@ -37,12 +37,11 @@ front_prompt
     or "bold rounded sans-serif in glowing gold with a thin outline").
   • Render the exact subtitle text below the title, smaller, in a
     complementary face. Skip if there is no subtitle.
-  • Render the exact author name centered near the bottom, in a refined
-    smaller face that matches the title's mood.
+  • DO NOT render the author name, byline, "by ___", or any author credit
+    on the front cover. Front carries title + subtitle ONLY.
   • Describe the illustration: scene, palette, lighting, mood, composition.
-    Leave space at the top for the title and at the bottom for the author —
-    use phrases like "title area at the top one-third", "author panel
-    across the bottom margin".
+    Use phrases like "title area at the top one-third" — leave room for
+    title and subtitle.
   • Ask for a single bleed-safe illustration filling the frame, no margins,
     no white space, no borders.
   • Specify aesthetic for the chosen book type (children's picture book →
@@ -58,12 +57,13 @@ back_prompt
   • Reserve a clean light rectangle in the bottom-right corner about
     1.5"×1" (called out in the prompt) for the printed barcode — no text
     in that area.
-  • Author byline can repeat at the very top of the back panel.
+  • DO NOT render the author name or any author credit anywhere on the
+    back cover.
   • Background should be quiet — typically a tinted color wash, soft
     pattern, or motif from the front. NO duplicate scene illustration.
 
 spine_text
-  Short string: "TITLE — AUTHOR" (ellipsized to fit a narrow spine).
+  Short string: just the TITLE (ellipsized to fit a narrow spine).
   This will be rendered programmatically by the compositor (the spine is
   usually too narrow for gpt-image-2 to render legible text directly).
 
@@ -77,8 +77,9 @@ palette
 
 CRITICAL
 - The front_prompt and back_prompt MUST quote the exact title, subtitle,
-  author name, and blurb text the user provides. Wrap each in quotation
-  marks inside the prompt so gpt-image-2 renders them verbatim.
+  and blurb text the user provides. Wrap each in quotation marks inside
+  the prompt so gpt-image-2 renders them verbatim.
+- Do NOT include the author name in front_prompt or back_prompt.
 - Do NOT include placeholder tokens like "[TITLE]" or "(insert blurb)".
 - Do NOT ask for borders, page numbers, watermarks, or KDP/ISBN logos —
   the publisher prints those over the wrap.
@@ -90,7 +91,6 @@ def _build_user_prompt(
     concept: IBookConcept,
     bible: IBookBible,
     metadata: IBookMetadata | None,
-    author: str,
     book_type: str,
 ) -> str:
     style = bible.style_guide
@@ -99,7 +99,6 @@ def _build_user_prompt(
         f"BOOK\n"
         f"Title: {concept.title}\n"
         f"Subtitle: {concept.subtitle}\n"
-        f"Author: {author}\n"
         f"Book type: {book_type}\n"
         f"Audience: {concept.audience}\n"
         f"Tone: {concept.tone}\n"
@@ -111,8 +110,9 @@ def _build_user_prompt(
         f"Lighting: {style.lighting}\n"
         f"Palette: {', '.join(style.palette) or 'designer choice'}\n\n"
         f"Produce an ICoverDesign whose front_prompt and back_prompt instruct "
-        f"gpt-image-2 to RENDER the title, subtitle, author, and blurb text "
-        f"directly into the artwork (no separate overlay)."
+        f"gpt-image-2 to RENDER the title, subtitle, and blurb text directly "
+        f"into the artwork (no separate overlay). The author name MUST NOT "
+        f"appear anywhere on the front or back cover."
     )
 
 
@@ -121,14 +121,12 @@ async def design_cover(
     concept: IBookConcept,
     bible: IBookBible,
     metadata: IBookMetadata | None = None,
-    author: str,
     book_type: str,
 ) -> ICoverDesign:
     user_prompt = _build_user_prompt(
         concept=concept,
         bible=bible,
         metadata=metadata,
-        author=author,
         book_type=book_type,
     )
     model = get_settings().copilot_model

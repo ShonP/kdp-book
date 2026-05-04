@@ -7,7 +7,7 @@ from pathlib import Path
 from ebooklib import epub
 
 from kdp_book.log import log
-from kdp_book.models.book import IBookState
+from kdp_book.models.book import BookType, IBookState
 
 
 def build_epub(state: IBookState, output_path: Path) -> Path:
@@ -25,7 +25,8 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
     if state.concept.subtitle:
         book.add_metadata("DC", "description", state.concept.subtitle)
 
-    # Cover image (front)
+    is_picture_book = state.config.book_type == BookType.CHILDREN_PICTURE_BOOK
+
     if state.cover and state.cover.front_image_path:
         front = book_dir / state.cover.front_image_path
         if front.exists():
@@ -44,7 +45,9 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
             file_name=f"chap_{chapter.index:02d}.xhtml",
             lang=state.config.language,
         )
-        body_parts = [f"<h1>{_escape(chapter.title)}</h1>"]
+        body_parts: list[str] = []
+        if not is_picture_book:
+            body_parts.append(f"<h1>{_escape(chapter.title)}</h1>")
         for img_path in images_by_chapter.get(chapter.index, [])[:1]:
             full = book_dir / img_path
             if full.exists():
@@ -55,13 +58,28 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
                     media_type="image/png",
                     content=full.read_bytes(),
                 ))
-                body_parts.append(
-                    f'<p style="text-align:center"><img src="{epub_img_name}" alt="chapter art"/></p>'
+                img_style = (
+                    'style="display:block;margin:0 auto;max-width:100%;height:auto"'
+                    if is_picture_book
+                    else 'style="text-align:center"'
                 )
-        for para in (chapter.prose or "").split("\n\n"):
-            text = para.strip()
-            if text:
-                body_parts.append(f"<p>{_escape(text)}</p>")
+                if is_picture_book:
+                    body_parts.append(
+                        f'<p style="text-align:center;margin:0;padding:0">'
+                        f'<img src="{epub_img_name}" alt="{_escape(chapter.title)}" {img_style}/></p>'
+                    )
+                else:
+                    body_parts.append(
+                        f'<p {img_style}><img src="{epub_img_name}" alt="chapter art"/></p>'
+                    )
+        # Picture-book pages bake the prose into the artwork itself, so we
+        # intentionally skip the prose <p> blocks. For accessibility the alt
+        # text on the <img> carries the chapter title.
+        if not is_picture_book:
+            for para in (chapter.prose or "").split("\n\n"):
+                text = para.strip()
+                if text:
+                    body_parts.append(f"<p>{_escape(text)}</p>")
         ch_html.set_content("".join(body_parts))
         book.add_item(ch_html)
         chapter_items.append(ch_html)
@@ -74,7 +92,7 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     epub.write_epub(str(output_path), book)
-    log.info("EPUB: %s (%d chapters)", output_path, len(chapter_items))
+    log.info("EPUB: %s (%d chapters, picture_book=%s)", output_path, len(chapter_items), is_picture_book)
     return output_path
 
 
