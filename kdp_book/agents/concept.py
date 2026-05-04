@@ -5,8 +5,10 @@ from __future__ import annotations
 from agent_framework import Agent
 
 from kdp_book.client import get_chat_client
+from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
 from kdp_book.models.book import BookType, IBookConcept, IBookTypeConfig
+from kdp_book.observability import record_output, record_prompt
 
 SYSTEM_PROMPT = """\
 You are a senior commissioning editor at a major book publisher. Given a
@@ -53,6 +55,15 @@ async def generate_concept(
     type_config: IBookTypeConfig,
 ) -> IBookConcept:
     """Run the concept agent and return a validated `IBookConcept`."""
+    user_prompt = _build_user_prompt(topic, book_type, type_config)
+    model = get_settings().copilot_model
+    record_prompt(
+        agent_name="concept-agent",
+        model=model,
+        system=SYSTEM_PROMPT,
+        user=user_prompt,
+        response_format="IBookConcept",
+    )
     agent = Agent(
         client=get_chat_client(),
         name="concept-agent",
@@ -60,9 +71,10 @@ async def generate_concept(
         middleware=[llm_call_logging],
     )
     response = await agent.run(
-        _build_user_prompt(topic, book_type, type_config),
+        user_prompt,
         options={"response_format": IBookConcept},
     )
     if response.value is None:
         raise RuntimeError("Concept agent returned no structured value")
+    record_output(agent_name="concept-agent", value=response.value)
     return response.value

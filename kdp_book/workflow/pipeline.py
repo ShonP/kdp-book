@@ -28,6 +28,12 @@ from kdp_book.models.book import (  # noqa: E402
     IBookState,
     get_book_type_config,
 )
+from kdp_book.observability import (  # noqa: E402
+    finalize_run_metadata,
+    init_run_metadata,
+    reset_step_counter,
+    step_recorder,
+)
 from kdp_book.workflow.state import (  # noqa: E402
     load_state,
     resolve_book_dir,
@@ -40,115 +46,133 @@ from kdp_book.workflow.steps import (  # noqa: E402
 )
 
 
+def _record(state: IBookState, step_name: str):
+    return step_recorder(state.book_dir, step_name)
+
+
 @step
 async def step_concept(state: IBookState) -> IBookState:
     log.info("Step concept: %s (%s)", state.config.topic, state.config.book_type.value)
-    state = await do_concept(state)
-    save_state(state)
+    with _record(state, "concept"):
+        state = await do_concept(state)
+        save_state(state)
     return state
 
 
 @step
 async def step_outline(state: IBookState) -> IBookState:
     log.info("Step outline: building chapter plan")
-    state = await do_outline(state)
-    save_state(state)
+    with _record(state, "outline"):
+        state = await do_outline(state)
+        save_state(state)
     return state
 
 
 @step
 async def step_bible(state: IBookState) -> IBookState:
     log.info("Step bible: characters + style guide")
-    state = await do_bible(state)
-    save_state(state)
+    with _record(state, "bible"):
+        state = await do_bible(state)
+        save_state(state)
     return state
 
 
 @step
 async def step_write(state: IBookState) -> IBookState:
-    log.info("Step write: not yet implemented (Phase 2)")
-    state.mark_done("write")
-    save_state(state)
+    log.info("Step write: not yet implemented (Phase 3)")
+    with _record(state, "write"):
+        state.mark_done("write")
+        save_state(state)
     return state
 
 
 @step
 async def step_edit(state: IBookState) -> IBookState:
-    log.info("Step edit: not yet implemented (Phase 2)")
-    state.mark_done("edit")
-    save_state(state)
+    log.info("Step edit: not yet implemented (Phase 4)")
+    with _record(state, "edit"):
+        state.mark_done("edit")
+        save_state(state)
     return state
 
 
 @step
 async def step_illustrate(state: IBookState) -> IBookState:
-    log.info("Step illustrate: not yet implemented (Phase 6)")
-    state.mark_done("illustrate")
-    save_state(state)
+    log.info("Step illustrate: not yet implemented (Phase 5)")
+    with _record(state, "illustrate"):
+        state.mark_done("illustrate")
+        save_state(state)
     return state
 
 
 @step
 async def step_characters(state: IBookState) -> IBookState:
-    log.info("Step characters: not yet implemented (Phase 6)")
-    state.mark_done("characters")
-    save_state(state)
+    log.info("Step characters: not yet implemented (Phase 5)")
+    with _record(state, "characters"):
+        state.mark_done("characters")
+        save_state(state)
     return state
 
 
 @step
 async def step_images(state: IBookState) -> IBookState:
-    log.info("Step images: not yet implemented (Phase 6)")
-    state.mark_done("images")
-    save_state(state)
+    log.info("Step images: not yet implemented (Phase 5)")
+    with _record(state, "images"):
+        state.mark_done("images")
+        save_state(state)
     return state
 
 
 @step
 async def step_consistency(state: IBookState) -> IBookState:
-    log.info("Step consistency: not yet implemented (Phase 7)")
-    state.mark_done("consistency")
-    save_state(state)
+    log.info("Step consistency: not yet implemented (Phase 8)")
+    with _record(state, "consistency"):
+        state.mark_done("consistency")
+        save_state(state)
     return state
 
 
 @step
 async def step_cover(state: IBookState) -> IBookState:
-    log.info("Step cover: not yet implemented (Phase 4)")
-    state.mark_done("cover")
-    save_state(state)
+    log.info("Step cover: not yet implemented (Phase 6)")
+    with _record(state, "cover"):
+        state.mark_done("cover")
+        save_state(state)
     return state
 
 
 @step
 async def step_format(state: IBookState) -> IBookState:
-    log.info("Step format: not yet implemented (Phase 3)")
-    state.mark_done("format")
-    save_state(state)
+    log.info("Step format: not yet implemented (Phase 7)")
+    with _record(state, "format"):
+        state.mark_done("format")
+        save_state(state)
     return state
 
 
 @step
 async def step_metadata(state: IBookState) -> IBookState:
-    log.info("Step metadata: not yet implemented (Phase 5)")
-    state.mark_done("metadata")
-    save_state(state)
+    log.info("Step metadata: not yet implemented (Phase 8)")
+    with _record(state, "metadata"):
+        state.mark_done("metadata")
+        save_state(state)
     return state
 
 
 @step
 async def step_quality(state: IBookState) -> IBookState:
     log.info("Step quality: not yet implemented (Phase 8)")
-    state.mark_done("quality")
-    save_state(state)
+    with _record(state, "quality"):
+        state.mark_done("quality")
+        save_state(state)
     return state
 
 
 @step
 async def step_publish(state: IBookState) -> str:
     log.info("Step publish: not yet implemented (Phase 10)")
-    state.mark_done("publish")
-    save_state(state)
+    with _record(state, "publish"):
+        state.mark_done("publish")
+        save_state(state)
     return state.book_dir
 
 
@@ -200,9 +224,17 @@ async def run_book_async(
     author: str | None = None,
 ) -> str:
     """Run the full pipeline. Returns the final book directory path."""
-    new_run_id()
+    run_id = new_run_id()
     book_dir = resolve_book_dir(topic, book_type, resume=resume)
     attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=run_id,
+        topic=topic,
+        book_type=book_type.value,
+        slug=book_dir.name,
+    )
 
     log.info("Starting kdp-book: topic=%r type=%s slug=%s", topic, book_type.value, book_dir.name)
     log.info("Book directory: %s", book_dir)
@@ -224,9 +256,11 @@ async def run_book_async(
         )
         outputs = result.get_outputs() if hasattr(result, "get_outputs") else []
         log.info("Pipeline complete (%d outputs)", len(outputs) if outputs else 0)
+        finalize_run_metadata(book_dir, status="ok")
         return str(book_dir)
     except Exception:
         log.exception("Pipeline failed")
+        finalize_run_metadata(book_dir, status="failed")
         raise
     finally:
         detach_file_handler()

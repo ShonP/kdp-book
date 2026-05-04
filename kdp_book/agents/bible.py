@@ -10,6 +10,7 @@ from __future__ import annotations
 from agent_framework import Agent
 
 from kdp_book.client import get_chat_client
+from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
 from kdp_book.models.book import (
     IBookBible,
@@ -17,6 +18,7 @@ from kdp_book.models.book import (
     IBookOutline,
     IBookTypeConfig,
 )
+from kdp_book.observability import record_output, record_prompt
 
 SYSTEM_PROMPT = """\
 You are an art director and continuity editor. From the concept and
@@ -87,6 +89,15 @@ async def generate_bible(
     outline: IBookOutline,
     type_config: IBookTypeConfig,
 ) -> IBookBible:
+    user_prompt = _build_user_prompt(concept, outline, type_config)
+    model = get_settings().copilot_model
+    record_prompt(
+        agent_name="bible-agent",
+        model=model,
+        system=SYSTEM_PROMPT,
+        user=user_prompt,
+        response_format="IBookBible",
+    )
     agent = Agent(
         client=get_chat_client(),
         name="bible-agent",
@@ -94,9 +105,10 @@ async def generate_bible(
         middleware=[llm_call_logging],
     )
     response = await agent.run(
-        _build_user_prompt(concept, outline, type_config),
+        user_prompt,
         options={"response_format": IBookBible},
     )
     if response.value is None:
         raise RuntimeError("Bible agent returned no structured value")
+    record_output(agent_name="bible-agent", value=response.value)
     return response.value

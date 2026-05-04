@@ -17,6 +17,12 @@ import click  # noqa: E402
 from kdp_book.config import get_settings  # noqa: E402
 from kdp_book.log import attach_file_handler, detach_file_handler, log, new_run_id  # noqa: E402
 from kdp_book.models.book import BookType  # noqa: E402
+from kdp_book.observability import (  # noqa: E402
+    finalize_run_metadata,
+    init_run_metadata,
+    reset_step_counter,
+    step_recorder,
+)
 from kdp_book.workflow.pipeline import run_book  # noqa: E402
 from kdp_book.workflow.state import load_state, resolve_book_dir, save_state  # noqa: E402
 from kdp_book.workflow.steps import do_bible, do_concept, do_outline  # noqa: E402
@@ -82,9 +88,17 @@ def outline(topic: str, book_type: str, author: str | None) -> None:
 
 
 async def _run_outline(topic: str, book_type: BookType, author: str | None) -> None:
-    new_run_id()
+    run_id = new_run_id()
     book_dir = resolve_book_dir(topic, book_type)
     attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=run_id,
+        topic=topic,
+        book_type=book_type.value,
+        slug=book_dir.name,
+    )
     try:
         from kdp_book.models.book import IBookConfig, IBookState, get_book_type_config
 
@@ -98,12 +112,15 @@ async def _run_outline(topic: str, book_type: BookType, author: str | None) -> N
         save_state(state)
         log.info("Outline run: %s (%s)", topic, book_type.value)
 
-        state = await do_concept(state)
-        save_state(state)
-        state = await do_outline(state)
-        save_state(state)
-        state = await do_bible(state)
-        save_state(state)
+        with step_recorder(state.book_dir, "concept"):
+            state = await do_concept(state)
+            save_state(state)
+        with step_recorder(state.book_dir, "outline"):
+            state = await do_outline(state)
+            save_state(state)
+        with step_recorder(state.book_dir, "bible"):
+            state = await do_bible(state)
+            save_state(state)
 
         click.echo(click.style(f"\nConcept: {state.concept.title}", fg="cyan"))
         click.echo(f"  Subtitle:  {state.concept.subtitle}")
@@ -116,6 +133,10 @@ async def _run_outline(topic: str, book_type: BookType, author: str | None) -> N
         for c in state.bible.characters:
             click.echo(f"  • {c.name} — {c.role}")
         click.echo(click.style(f"\nSaved to: {book_dir}", fg="green"))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
     finally:
         detach_file_handler()
 

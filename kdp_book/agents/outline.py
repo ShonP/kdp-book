@@ -5,8 +5,10 @@ from __future__ import annotations
 from agent_framework import Agent
 
 from kdp_book.client import get_chat_client
+from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
 from kdp_book.models.book import IBookConcept, IBookOutline, IBookTypeConfig
+from kdp_book.observability import record_output, record_prompt
 
 SYSTEM_PROMPT = """\
 You are a structural editor. Given a book concept and the target book-type
@@ -61,6 +63,15 @@ async def generate_outline(
     concept: IBookConcept,
     type_config: IBookTypeConfig,
 ) -> IBookOutline:
+    user_prompt = _build_user_prompt(concept, type_config)
+    model = get_settings().copilot_model
+    record_prompt(
+        agent_name="outline-agent",
+        model=model,
+        system=SYSTEM_PROMPT,
+        user=user_prompt,
+        response_format="IBookOutline",
+    )
     agent = Agent(
         client=get_chat_client(),
         name="outline-agent",
@@ -68,9 +79,10 @@ async def generate_outline(
         middleware=[llm_call_logging],
     )
     response = await agent.run(
-        _build_user_prompt(concept, type_config),
+        user_prompt,
         options={"response_format": IBookOutline},
     )
     if response.value is None:
         raise RuntimeError("Outline agent returned no structured value")
+    record_output(agent_name="outline-agent", value=response.value)
     return response.value
