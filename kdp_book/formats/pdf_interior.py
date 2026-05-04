@@ -144,7 +144,10 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
             for img_path in images_by_chapter.get(chapter.index, [])[:1]:
                 full = book_dir / img_path
                 if full.exists():
-                    fig_w = frame_w * (1.0 if is_picture_book else 0.85)
+                    title_h = chapter_title_style.leading + typography.body_pt * 1.2
+                    avail_h = frame_h - title_h - typography.body_pt
+                    target = frame_w * (1.0 if is_picture_book else 0.85)
+                    fig_w = min(target, avail_h)
                     story.append(Image(str(full), width=fig_w, height=fig_w))
                     story.append(Spacer(1, typography.body_pt))
 
