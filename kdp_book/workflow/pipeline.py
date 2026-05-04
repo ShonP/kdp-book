@@ -42,7 +42,9 @@ from kdp_book.workflow.state import (  # noqa: E402
 from kdp_book.workflow.steps import (  # noqa: E402
     do_bible,
     do_concept,
+    do_edit,
     do_outline,
+    do_write,
 )
 
 
@@ -79,18 +81,18 @@ async def step_bible(state: IBookState) -> IBookState:
 
 @step
 async def step_write(state: IBookState) -> IBookState:
-    log.info("Step write: not yet implemented (Phase 3)")
+    log.info("Step write: drafting manuscript")
     with _record(state, "write"):
-        state.mark_done("write")
+        state = await do_write(state)
         save_state(state)
     return state
 
 
 @step
 async def step_edit(state: IBookState) -> IBookState:
-    log.info("Step edit: not yet implemented (Phase 4)")
+    log.info("Step edit: editorial review")
     with _record(state, "edit"):
-        state.mark_done("edit")
+        state = await do_edit(state)
         save_state(state)
     return state
 

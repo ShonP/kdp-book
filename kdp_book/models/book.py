@@ -189,8 +189,100 @@ class IBookBible(BaseModel):
     style_guide: IStyleGuide
 
 
+class IChapterDraft(BaseModel):
+    """A single drafted chapter — produced by `WriterAgent`."""
+
+    index: int
+    title: str
+    prose: str
+    word_count: int = 0
+    notes: list[str] = Field(default_factory=list)
+
+
+class IManuscript(BaseModel):
+    """All chapter drafts assembled — produced after `step_write`."""
+
+    chapters: list[IChapterDraft] = Field(default_factory=list)
+    total_word_count: int = 0
+
+
+class IEditorIssue(BaseModel):
+    """One concrete issue raised by the editor agent."""
+
+    chapter_index: int | None = None
+    severity: str = "minor"  # blocker | important | minor
+    category: str = ""  # consistency | voice | pacing | grammar | plot | factual
+    note: str
+
+
+class IEditorReport(BaseModel):
+    """Editor agent verdict — produced by `step_edit`."""
+
+    score: int  # 1..10
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    issues: list[IEditorIssue] = Field(default_factory=list)
+    chapters_to_revise: list[int] = Field(default_factory=list)
+
+
+class IIllustrationBrief(BaseModel):
+    """Composition-only image brief for one scene — Phase 5."""
+
+    chapter_index: int
+    scene_index: int
+    page_index: int = 0
+    composition: str
+    camera: str = ""
+    pose: str = ""
+    action: str = ""
+    lighting: str = ""
+    mood: str = ""
+    characters_present: list[str] = Field(default_factory=list)
+    location: str = ""
+
+
+class IPageImage(BaseModel):
+    """One rendered page/scene image — Phase 5."""
+
+    chapter_index: int
+    scene_index: int
+    page_index: int = 0
+    image_path: str
+    sidecar_path: str = ""
+
+
+class ICoverDesign(BaseModel):
+    """Cover concept produced by CoverAgent — Phase 6."""
+
+    front_prompt: str
+    back_prompt: str = ""
+    spine_text: str = ""
+    typography_notes: str = ""
+    palette: list[str] = Field(default_factory=list)
+    front_image_path: str = ""
+    back_image_path: str = ""
+    composed_path: str = ""
+
+
+class IQualityIssue(BaseModel):
+    chapter_index: int | None = None
+    page_index: int | None = None
+    severity: str = "minor"
+    category: str = ""
+    note: str
+
+
+class IQualityReport(BaseModel):
+    """Final QualityAgent verdict — Phase 8."""
+
+    score: int  # 1..10
+    summary: str
+    blockers: list[IQualityIssue] = Field(default_factory=list)
+    concerns: list[IQualityIssue] = Field(default_factory=list)
+
+
 class IBookMetadata(BaseModel):
-    """KDP listing metadata — produced by `MetadataAgent` (Phase 5)."""
+    """KDP listing metadata — produced by `MetadataAgent` (Phase 8)."""
 
     title: str
     subtitle: str = ""
@@ -225,8 +317,15 @@ class IBookState(BaseModel):
     concept: IBookConcept | None = None
     outline: IBookOutline | None = None
     bible: IBookBible | None = None
+    manuscript: IManuscript | None = None
+    editor_report: IEditorReport | None = None
+    illustrations: list[IIllustrationBrief] = Field(default_factory=list)
+    images: list[IPageImage] = Field(default_factory=list)
+    cover: ICoverDesign | None = None
     metadata: IBookMetadata | None = None
+    quality_report: IQualityReport | None = None
     completed_steps: list[str] = Field(default_factory=list)
+    written_chapter_indices: list[int] = Field(default_factory=list)
 
     def mark_done(self, step: str) -> None:
         if step not in self.completed_steps:

@@ -141,35 +141,124 @@ async def _run_outline(topic: str, book_type: BookType, author: str | None) -> N
         detach_file_handler()
 
 
-# ── stubs for later phases ────────────────────────────────────────────────────
+# ── write ─────────────────────────────────────────────────────────────────────
+
+
+def _slug_to_book_dir(slug: str):
+    book_dir = get_settings().kdp_books_dir / slug
+    if not book_dir.exists():
+        raise click.UsageError(f"No book directory at {book_dir}")
+    return book_dir
+
 
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 def write(from_slug: str) -> None:
-    """Write the manuscript (Phase 2)."""
-    click.echo("write: not yet implemented (Phase 2)")
+    """Draft every chapter for an existing book slug."""
+    asyncio.run(_run_write(from_slug))
+
+
+async def _run_write(slug: str) -> None:
+    from kdp_book.workflow.steps import do_write
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    new_run_id()
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "write"):
+            state = await do_write(state)
+            save_state(state)
+        click.echo(click.style(
+            f"\nManuscript: {len(state.manuscript.chapters)} chapters, "
+            f"{state.manuscript.total_word_count} words",
+            fg="green",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
+
+
+@main.command()
+@click.option("--from", "from_slug", required=True, help="Existing book slug.")
+def edit(from_slug: str) -> None:
+    """Run the editorial review on a drafted manuscript."""
+    asyncio.run(_run_edit(from_slug))
+
+
+async def _run_edit(slug: str) -> None:
+    from kdp_book.workflow.steps import do_edit
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "edit"):
+            state = await do_edit(state)
+            save_state(state)
+        report = state.editor_report
+        click.echo(click.style(
+            f"\nEditor: {report.score}/10 — {len(report.issues)} issues, "
+            f"{len(report.chapters_to_revise)} chapters revised",
+            fg="green" if report.score >= 7 else "yellow",
+        ))
+        click.echo(report.summary)
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
+
+
+# ── stubs for later phases ────────────────────────────────────────────────────
 
 
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 def illustrate(from_slug: str) -> None:
-    """Generate illustrations (Phase 6)."""
-    click.echo("illustrate: not yet implemented (Phase 6)")
+    """Generate illustrations (Phase 5)."""
+    click.echo("illustrate: not yet implemented (Phase 5)")
 
 
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 @click.option("--output", default="both", type=click.Choice(["pdf", "epub", "both"]))
 def format(from_slug: str, output: str) -> None:
-    """Render PDF/EPUB (Phase 3)."""
-    click.echo(f"format ({output}): not yet implemented (Phase 3)")
+    """Render PDF/EPUB (Phase 7)."""
+    click.echo(f"format ({output}): not yet implemented (Phase 7)")
 
 
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 def cover(from_slug: str) -> None:
-    """Render cover (Phase 4)."""
-    click.echo("cover: not yet implemented (Phase 4)")
+    """Render cover (Phase 6)."""
+    click.echo("cover: not yet implemented (Phase 6)")
 
 
 @main.command()
