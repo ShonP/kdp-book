@@ -41,15 +41,104 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
 
     book_dir = Path(state.book_dir)
     type_config = state.config.type_config
-    pages_estimate = max(type_config.target_pages, len(state.manuscript.chapters) * 4)
-    margins = interior_margins(pages_estimate, full_bleed=type_config.full_bleed)
-    typography = typography_for(type_config.trim_size.value if False else state.config.book_type.value)
+    margins = interior_margins(
+        max(type_config.target_pages, len(state.manuscript.chapters) * 4),
+        full_bleed=type_config.full_bleed,
+    )
     trim_w_in, trim_h_in = trim_size_inches(type_config.trim_size)
-
     page_w_pt = (trim_w_in + 2 * margins.bleed_in) * inch
     page_h_pt = (trim_h_in + 2 * margins.bleed_in) * inch
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if state.config.book_type == BookType.CHILDREN_PICTURE_BOOK:
+        return _build_picture_book_pdf(
+            state=state,
+            output_path=output_path,
+            book_dir=book_dir,
+            page_w_pt=page_w_pt,
+            page_h_pt=page_h_pt,
+        )
+
+    return _build_text_book_pdf(
+        state=state,
+        output_path=output_path,
+        book_dir=book_dir,
+        page_w_pt=page_w_pt,
+        page_h_pt=page_h_pt,
+        margins=margins,
+    )
+
+
+def _build_picture_book_pdf(
+    *,
+    state: IBookState,
+    output_path: Path,
+    book_dir: Path,
+    page_w_pt: float,
+    page_h_pt: float,
+) -> Path:
+    """Picture-book PDF: full-bleed image per page, no text, no margins.
+
+    Layout: front cover → one full-page illustration per chapter → back cover.
+    All page text is already baked into each illustration by gpt-image-2.
+    """
+    doc = BaseDocTemplate(
+        str(output_path),
+        pagesize=(page_w_pt, page_h_pt),
+        leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0,
+        title=state.concept.title,
+        author=state.config.author,
+    )
+    full_frame = Frame(
+        0, 0, page_w_pt, page_h_pt,
+        leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0,
+        id="full",
+    )
+    doc.addPageTemplates([PageTemplate(id="full", frames=[full_frame])])
+
+    story: list = []
+    images_by_chapter = _index_images(state)
+
+    if state.cover and state.cover.front_image_path:
+        front = book_dir / state.cover.front_image_path
+        if front.exists():
+            story.append(Image(str(front), width=page_w_pt, height=page_h_pt))
+            story.append(PageBreak())
+
+    for chapter in state.manuscript.chapters:
+        for img_path in images_by_chapter.get(chapter.index, [])[:1]:
+            full = book_dir / img_path
+            if full.exists():
+                story.append(Image(str(full), width=page_w_pt, height=page_h_pt))
+                story.append(PageBreak())
+
+    if state.cover and state.cover.back_image_path:
+        back = book_dir / state.cover.back_image_path
+        if back.exists():
+            story.append(Image(str(back), width=page_w_pt, height=page_h_pt))
+            story.append(PageBreak())
+
+    doc.build(story)
+    log.info(
+        "Interior PDF (picture-book full-bleed): %s (%d pages)",
+        output_path, len(state.manuscript.chapters),
+    )
+    return output_path
+
+
+def _build_text_book_pdf(
+    *,
+    state: IBookState,
+    output_path: Path,
+    book_dir: Path,
+    page_w_pt: float,
+    page_h_pt: float,
+    margins,
+) -> Path:
+    """Text-first interior for non-picture-book types (light novel, fiction, non-fiction)."""
+    typography = typography_for(state.config.book_type.value)
+
     doc = BaseDocTemplate(
         str(output_path),
         pagesize=(page_w_pt, page_h_pt),
@@ -61,7 +150,6 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
         author=state.config.author,
     )
 
-    # Mirror margins: even pages get gutter on right, odd pages on left.
     inner_margin_pt = margins.gutter_in * inch
     outer_margin_pt = margins.outer_in * inch
     top_margin_pt = margins.top_in * inch
@@ -103,12 +191,10 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
         spaceBefore=typography.chapter_title_pt * 1.5,
         spaceAfter=typography.chapter_title_pt * 0.6,
         textColor=accent,
-        alignment=1,  # centre
+        alignment=1,
     )
 
     story: list = []
-
-    # Title page
     story.append(Spacer(1, 1.5 * inch))
     story.append(Paragraph(
         f"<para alignment='center'>{_escape(state.concept.title)}</para>",
@@ -131,31 +217,22 @@ def build_interior_pdf(state: IBookState, output_path: Path) -> Path:
     story.append(PageBreak())
 
     images_by_chapter = _index_images(state)
-    is_picture_book = state.config.book_type == BookType.CHILDREN_PICTURE_BOOK
 
     for chapter in state.manuscript.chapters:
         story.append(Paragraph(_escape(chapter.title), chapter_title_style))
         story.append(Spacer(1, typography.body_pt * 1.2))
-
-        # Chapter art (first image of the chapter, if any).
-        # For picture books the prose is baked into the image, so we render
-        # the illustration full-width and skip the separate prose block.
         if state.config.type_config.illustrations_per_chapter > 0:
             for img_path in images_by_chapter.get(chapter.index, [])[:1]:
                 full = book_dir / img_path
                 if full.exists():
                     title_h = chapter_title_style.leading + typography.body_pt * 1.2
                     avail_h = frame_h - title_h - typography.body_pt
-                    target = frame_w * (1.0 if is_picture_book else 0.85)
-                    fig_w = min(target, avail_h)
+                    fig_w = min(frame_w * 0.85, avail_h)
                     story.append(Image(str(full), width=fig_w, height=fig_w))
                     story.append(Spacer(1, typography.body_pt))
-
-        if not is_picture_book:
-            for para in (chapter.prose or "").split("\n\n"):
-                text = para.strip()
-                if not text:
-                    continue
+        for para in (chapter.prose or "").split("\n\n"):
+            text = para.strip()
+            if text:
                 story.append(Paragraph(_escape(text), body_style))
         story.append(PageBreak())
 

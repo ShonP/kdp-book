@@ -284,19 +284,29 @@ async def do_illustrate(state: IBookState) -> IBookState:
         state.mark_done("illustrate")
         return state
 
+    workers = max(1, get_settings().chapter_writer_workers)
+    log.info(
+        "Planning illustrations for %d chapter(s) with %d worker(s)",
+        len(state.outline.chapters), workers,
+    )
+    sem = asyncio.Semaphore(workers)
+
+    async def plan_one(chapter):
+        async with sem:
+            log.info("Planning illustrations for chapter %d", chapter.index)
+            return await plan_chapter_illustrations(
+                concept=state.concept,
+                bible=state.bible,
+                chapter=chapter,
+                illustrations_per_chapter=illustrations_per_chapter,
+            )
+
+    chapter_briefs = await asyncio.gather(*(plan_one(c) for c in state.outline.chapters))
     all_briefs: list[IIllustrationBrief] = []
-    for chapter in state.outline.chapters:
-        log.info("Planning illustrations for chapter %d", chapter.index)
-        briefs = await plan_chapter_illustrations(
-            concept=state.concept,
-            bible=state.bible,
-            chapter=chapter,
-            illustrations_per_chapter=illustrations_per_chapter,
-        )
+    for briefs in chapter_briefs:
         all_briefs.extend(briefs)
-        # Persist progress so a crash mid-plan resumes correctly.
-        state.illustrations = all_briefs
-        save_state(state)
+    state.illustrations = all_briefs
+    save_state(state)
 
     log.info("Planned %d illustrations across %d chapters", len(all_briefs), len(state.outline.chapters))
     state.mark_done("illustrate")

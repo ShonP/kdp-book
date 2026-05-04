@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     azure_image_edit_endpoint: str = ""
     image_size: str = "1024x1024"
     image_quality: str = "low"
-    image_generation_workers: int = 3
-    chapter_writer_workers: int = 3
+    image_generation_workers: int = 5
+    chapter_writer_workers: int = 6
 
     azure_storage_connection_string: str = ""
     azure_storage_container: str = "kdp-books"
