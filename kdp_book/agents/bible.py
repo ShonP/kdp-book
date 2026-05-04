@@ -26,12 +26,19 @@ outline, produce a reusable "bible" that downstream writing and
 illustration steps will consume.
 
 Rules:
-- characters: 3-8 named entities. For each, give:
-    * name (short, distinctive)
+- characters: 3-8 INDIVIDUAL named entities. ABSOLUTELY NEVER use plural,
+  collective, or group entries (no "Children", "Young Dragons",
+  "The Villagers", "Crew Members", etc). If a story features a group,
+  pick 1-3 specific named members and list each separately. Each entry
+  represents ONE specific person/animal/being whose face we will lock
+  with a single reference image. For each, give:
+    * name (short, distinctive, SINGULAR — a proper name like "Pip",
+      "Luna", "Captain Finn", "Grandma Ember" — never a category).
     * role ("protagonist", "best friend", "antagonist", etc.)
     * age (concrete: "8 years old" / "early 20s" / "ancient")
     * appearance: face shape, hair color/length, skin tone, eye color,
-      build. Concrete and visualizable.
+      build. Concrete and visualizable. Describe ONE individual — never
+      "they have" or "the group is".
     * costume: outfit they wear by default — fabric, color, signature
       detail.
     * palette: 3-5 hex colors that define their visual identity.
@@ -110,5 +117,40 @@ async def generate_bible(
     )
     if response.value is None:
         raise RuntimeError("Bible agent returned no structured value")
-    record_output(agent_name="bible-agent", value=response.value)
-    return response.value
+    bible = response.value
+    bible.characters = _drop_group_characters(bible.characters)
+    record_output(agent_name="bible-agent", value=bible)
+    return bible
+
+
+def _is_group_name(name: str) -> bool:
+    """Heuristic: drop bible entries whose name reads as a plural/collective.
+
+    Conservative — only fires on well-known collective words. We accept the
+    occasional plural-sounding proper name ("Charles") rather than risk
+    dropping a legitimate character.
+    """
+    n = (name or "").strip()
+    if not n:
+        return True
+    lower = n.lower()
+    collective_words = {
+        "children", "kids", "villagers", "townsfolk", "townspeople",
+        "crowd", "crew", "soldiers", "guards", "students", "friends",
+        "family", "neighbors", "neighbours", "siblings", "elders",
+        "dragons", "knights", "wizards", "people", "men", "women",
+        "boys", "girls", "animals", "monsters", "creatures", "twins",
+        "triplets", "peers", "classmates", "teammates", "denizens",
+        "heroes", "villains", "rivals",
+    }
+    tokens = set(lower.replace("-", " ").split())
+    return bool(tokens & collective_words)
+
+
+def _drop_group_characters(characters: list) -> list:
+    kept = []
+    for c in characters:
+        if _is_group_name(c.name):
+            continue
+        kept.append(c)
+    return kept

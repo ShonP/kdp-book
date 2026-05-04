@@ -3,11 +3,28 @@
 `books/<slug>/manifest.json` is the single source of truth for every reference
 image and rendered page image. Character variants chain off a default pose, so
 re-rendering the default invalidates dependents (`stale=True`).
+
+On-disk layout (per book):
+    books/<slug>/
+      assets/
+        <character-name>/
+          default.png          ← canonical reference (front view)
+          default.png.json     ← image sidecar
+          variants/
+            side.png
+            side.png.json
+            angry.png
+        <other-character>/
+          default.png
+      pages/
+        page-001.png
+        page-001.png.json
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +36,26 @@ from kdp_book.models.assets import (
     IImageAsset,
 )
 from kdp_book.tools.atomic_io import atomic_write_text
+
+
+def character_slug(name: str) -> str:
+    """Filesystem-safe slug for a character name."""
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return s or "unnamed"
+
+
+def character_dir(book_dir: Path, name: str) -> Path:
+    return book_dir / "assets" / character_slug(name)
+
+
+def character_image_path(
+    book_dir: Path, name: str, variant: str = "default",
+) -> Path:
+    """Where the rendered PNG lives for `(name, variant)`."""
+    base = character_dir(book_dir, name)
+    if variant == "default":
+        return base / "default.png"
+    return base / "variants" / f"{character_slug(variant)}.png"
 
 
 def _manifest_path(book_dir: Path) -> Path:

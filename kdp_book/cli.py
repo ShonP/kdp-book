@@ -71,14 +71,25 @@ def doctor() -> None:
 @click.option("--resume", default=None, help="Slug of an existing book directory to resume.")
 @click.option("--author", default=None, help="Author/pen name. Defaults to KDP_AUTHOR_NAME.")
 @click.option("--no-images", is_flag=True, help="Skip illustrations/cover (cheap text-only smoke test).")
+@click.option(
+    "--quality",
+    type=click.Choice(["low", "medium", "high"]),
+    default=None,
+    help="Override gpt-image-2 quality. Defaults to IMAGE_QUALITY in .env (low).",
+)
 def generate(
     topic: str,
     book_type: str,
     resume: str | None,
     author: str | None,
     no_images: bool,
+    quality: str | None,
 ) -> None:
     """Run the full pipeline end-to-end. Resumable via --resume <slug>."""
+    if quality is not None:
+        # Override the cached settings singleton for this run.
+        s = get_settings()
+        s.image_quality = quality
     book_dir = run_book(
         topic,
         BookType(book_type),

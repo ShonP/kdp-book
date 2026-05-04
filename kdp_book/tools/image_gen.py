@@ -24,8 +24,8 @@ def render_with_retry(
     *,
     prompt: str,
     references: list[Path] | None = None,
-    size: str = "1024x1024",
-    quality: str = "high",
+    size: str | None = None,
+    quality: str | None = None,
     content_rating: str = "all-ages",
     max_attempts: int = 5,
 ) -> tuple[bytes, dict]:

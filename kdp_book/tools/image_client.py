@@ -85,14 +85,16 @@ def _extract_b64(response: httpx.Response) -> bytes:
 def generate_image(
     prompt: str,
     *,
-    size: str = "1024x1024",
-    quality: str = "high",
+    size: str | None = None,
+    quality: str | None = None,
 ) -> bytes:
-    """Text-only image generation."""
+    """Text-only image generation. Defaults pull from settings."""
     s = get_settings()
     if not s.azure_image_endpoint:
         raise RuntimeError("AZURE_IMAGE_ENDPOINT not configured")
-    log.info("Image generate: %d-char prompt @ %s", len(prompt), size)
+    size = size or s.image_size
+    quality = quality or s.image_quality
+    log.info("Image generate: %d-char prompt @ %s (q=%s)", len(prompt), size, quality)
     resp = _post_with_retry(
         s.azure_image_endpoint,
         headers={"api-key": _api_key(), "Content-Type": "application/json"},
@@ -105,8 +107,8 @@ def edit_image(
     prompt: str,
     references: list[Path],
     *,
-    size: str = "1024x1024",
-    quality: str = "high",
+    size: str | None = None,
+    quality: str | None = None,
     input_fidelity: str = "high",
 ) -> bytes:
     """Edit using one or more reference images (multipart `image[]`)."""
@@ -115,7 +117,9 @@ def edit_image(
     s = get_settings()
     if not s.azure_image_edit_endpoint:
         raise RuntimeError("AZURE_IMAGE_EDIT_ENDPOINT not configured")
-    log.info("Image edit: %d refs @ %s", len(references), size)
+    size = size or s.image_size
+    quality = quality or s.image_quality
+    log.info("Image edit: %d refs @ %s (q=%s)", len(references), size, quality)
     files = [
         ("image[]", (ref.name, ref.read_bytes(), "image/png"))
         for ref in references
@@ -138,8 +142,8 @@ def edit_image_composite(
     prompt: str,
     references: list[Path],
     *,
-    size: str = "1024x1024",
-    quality: str = "high",
+    size: str | None = None,
+    quality: str | None = None,
 ) -> bytes:
     """Multi-ref edit with native `image[]`; falls back to primary ref on rejection."""
     try:
