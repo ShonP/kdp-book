@@ -326,6 +326,7 @@ class IBookState(BaseModel):
     quality_report: IQualityReport | None = None
     completed_steps: list[str] = Field(default_factory=list)
     written_chapter_indices: list[int] = Field(default_factory=list)
+    skip_images: bool = False
 
     def mark_done(self, step: str) -> None:
         if step not in self.completed_steps:

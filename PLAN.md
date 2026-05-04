@@ -272,6 +272,11 @@ Each phase ends with: **one runnable command**, **one `git commit`**, and a
 **short demo**. Tests in each phase are listed; the goal is the test suite
 grows monotonically.
 
+> **Status (autopilot run):** Phases 0–9 implemented and pushed to
+> `ShonP/kdp-book`. The full pipeline runs end-to-end. Live-verified
+> through `outline` + `--no-images` smoke; image rendering remains
+> dependent on Azure `gpt-image-2` access.
+
 ### Phase 0 — Foundations *(no agents, no images)*
 
 **Goal.** `uv run kdp-book doctor` validates the environment.

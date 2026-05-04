@@ -70,9 +70,22 @@ def doctor() -> None:
 @click.option("--type", "book_type", required=True, type=click.Choice(BOOK_TYPE_CHOICES), help="Book type.")
 @click.option("--resume", default=None, help="Slug of an existing book directory to resume.")
 @click.option("--author", default=None, help="Author/pen name. Defaults to KDP_AUTHOR_NAME.")
-def generate(topic: str, book_type: str, resume: str | None, author: str | None) -> None:
+@click.option("--no-images", is_flag=True, help="Skip illustrations/cover (cheap text-only smoke test).")
+def generate(
+    topic: str,
+    book_type: str,
+    resume: str | None,
+    author: str | None,
+    no_images: bool,
+) -> None:
     """Run the full pipeline end-to-end. Resumable via --resume <slug>."""
-    book_dir = run_book(topic, BookType(book_type), resume=resume, author=author)
+    book_dir = run_book(
+        topic,
+        BookType(book_type),
+        resume=resume,
+        author=author,
+        skip_images=no_images,
+    )
     click.echo(click.style(f"\nDone. Output: {book_dir}", fg="green"))
 
 

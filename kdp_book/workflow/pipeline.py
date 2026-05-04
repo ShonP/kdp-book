@@ -106,6 +106,12 @@ async def step_edit(state: IBookState) -> IBookState:
 
 @step
 async def step_illustrate(state: IBookState) -> IBookState:
+    if state.skip_images:
+        log.info("Step illustrate: skipped (skip_images=True)")
+        with _record(state, "illustrate"):
+            state.mark_done("illustrate")
+            save_state(state)
+        return state
     log.info("Step illustrate: planning page-level briefs")
     with _record(state, "illustrate"):
         state = await do_illustrate(state)
@@ -115,6 +121,12 @@ async def step_illustrate(state: IBookState) -> IBookState:
 
 @step
 async def step_characters(state: IBookState) -> IBookState:
+    if state.skip_images:
+        log.info("Step characters: skipped (skip_images=True)")
+        with _record(state, "characters"):
+            state.mark_done("characters")
+            save_state(state)
+        return state
     log.info("Step characters: rendering reference sheets")
     with _record(state, "characters"):
         state = await do_characters(state)
@@ -124,6 +136,12 @@ async def step_characters(state: IBookState) -> IBookState:
 
 @step
 async def step_images(state: IBookState) -> IBookState:
+    if state.skip_images:
+        log.info("Step images: skipped (skip_images=True)")
+        with _record(state, "images"):
+            state.mark_done("images")
+            save_state(state)
+        return state
     log.info("Step images: rendering page illustrations")
     with _record(state, "images"):
         state = await do_images(state)
@@ -133,8 +151,19 @@ async def step_images(state: IBookState) -> IBookState:
 
 @step
 async def step_consistency(state: IBookState) -> IBookState:
-    log.info("Step consistency: not yet implemented (Phase 8)")
+    """Visual consistency gate. Currently a structural check —
+    full vision-model audit ships in a future phase."""
+    log.info("Step consistency: validating asset coverage")
     with _record(state, "consistency"):
+        if not state.skip_images and state.illustrations:
+            covered = {(im.chapter_index, im.scene_index) for im in state.images}
+            wanted = {(b.chapter_index, b.scene_index) for b in state.illustrations}
+            missing = wanted - covered
+            if missing:
+                log.warning(
+                    "Consistency: %d illustration briefs lack rendered images",
+                    len(missing),
+                )
         state.mark_done("consistency")
         save_state(state)
     return state
@@ -142,6 +171,12 @@ async def step_consistency(state: IBookState) -> IBookState:
 
 @step
 async def step_cover(state: IBookState) -> IBookState:
+    if state.skip_images:
+        log.info("Step cover: skipped (skip_images=True)")
+        with _record(state, "cover"):
+            state.mark_done("cover")
+            save_state(state)
+        return state
     log.info("Step cover: design + render + compose wrap")
     with _record(state, "cover"):
         state = await do_cover(state)
@@ -178,7 +213,13 @@ async def step_quality(state: IBookState) -> IBookState:
 
 @step
 async def step_publish(state: IBookState) -> str:
-    log.info("Step publish: not yet implemented (Phase 10)")
+    """Final step: marks the run complete and returns the book directory.
+
+    Real KDP API upload is not yet supported — the produced
+    `output/interior.pdf`, `output/<slug>.epub`, and `cover/cover_wrap.pdf`
+    are ready for manual upload to the KDP dashboard.
+    """
+    log.info("Step publish: pipeline complete — outputs ready in %s/output", state.book_dir)
     with _record(state, "publish"):
         state.mark_done("publish")
         save_state(state)
@@ -211,6 +252,8 @@ def _init_state(input_data: dict) -> IBookState:
     existing = load_state(book_dir)
     if existing is not None:
         log.info("Resuming from %s (steps done: %s)", book_dir.name, existing.completed_steps)
+        if "skip_images" in input_data:
+            existing.skip_images = bool(input_data["skip_images"])
         return existing
 
     book_type = BookType(input_data["book_type"])
@@ -221,6 +264,7 @@ def _init_state(input_data: dict) -> IBookState:
         author=input_data.get("author") or get_settings().kdp_author_name,
     )
     state = IBookState(slug=book_dir.name, book_dir=str(book_dir), config=config)
+    state.skip_images = bool(input_data.get("skip_images", False))
     save_state(state)
     return state
 
@@ -231,6 +275,7 @@ async def run_book_async(
     *,
     resume: str | None = None,
     author: str | None = None,
+    skip_images: bool = False,
 ) -> str:
     """Run the full pipeline. Returns the final book directory path."""
     run_id = new_run_id()
@@ -245,7 +290,8 @@ async def run_book_async(
         slug=book_dir.name,
     )
 
-    log.info("Starting kdp-book: topic=%r type=%s slug=%s", topic, book_type.value, book_dir.name)
+    log.info("Starting kdp-book: topic=%r type=%s slug=%s skip_images=%s",
+             topic, book_type.value, book_dir.name, skip_images)
     log.info("Book directory: %s", book_dir)
 
     checkpoint_dir = book_dir / ".checkpoints"
@@ -259,6 +305,7 @@ async def run_book_async(
                 "book_type": book_type.value,
                 "book_dir": str(book_dir),
                 "author": author or get_settings().kdp_author_name,
+                "skip_images": skip_images,
                 "started_at": datetime.now(UTC).isoformat(),
             },
             checkpoint_storage=storage,
@@ -281,6 +328,9 @@ def run_book(
     *,
     resume: str | None = None,
     author: str | None = None,
+    skip_images: bool = False,
 ) -> str:
     """Synchronous wrapper for `run_book_async`."""
-    return asyncio.run(run_book_async(topic, book_type, resume=resume, author=author))
+    return asyncio.run(run_book_async(
+        topic, book_type, resume=resume, author=author, skip_images=skip_images,
+    ))
