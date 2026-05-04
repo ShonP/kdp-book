@@ -16,7 +16,7 @@ On-disk layout (per book):
             angry.png
         <other-character>/
           default.png
-      pages/
+      images/
         page-001.png
         page-001.png.json
 """

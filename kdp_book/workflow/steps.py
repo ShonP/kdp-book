@@ -418,8 +418,8 @@ async def do_images(state: IBookState) -> IBookState:
         return state
 
     book_dir = Path(state.book_dir)
-    pages_dir = book_dir / "pages"
-    pages_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = book_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
     rendered_keys = {(img.chapter_index, img.scene_index) for img in state.images}
     page_counter = max([img.page_index for img in state.images], default=0)
 
@@ -485,7 +485,7 @@ async def do_images(state: IBookState) -> IBookState:
                 )
                 return None
 
-        rel_path = f"pages/page-{page_index:03d}.png"
+        rel_path = f"images/page-{page_index:03d}.png"
         out_path = book_dir / rel_path
         atomic_write_bytes(out_path, img_bytes)
         rec = make_image_record(
@@ -662,7 +662,9 @@ async def do_cover(state: IBookState) -> IBookState:
 
 
 async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
-    """Render PDF and/or EPUB into books/<slug>/output/."""
+    """Render PDF + EPUB + cover.pdf into books/<slug>/output/."""
+    import shutil
+
     from kdp_book.formats.epub_builder import build_epub
     from kdp_book.formats.pdf_interior import build_interior_pdf
 
@@ -680,6 +682,13 @@ async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
         build_interior_pdf(state, out_dir / "interior.pdf")
     if output in ("epub", "both"):
         build_epub(state, out_dir / f"{state.slug}.epub")
+
+    # Expose the print-ready cover wrap at output/cover.pdf alongside the interior.
+    cover_pdf_src = book_dir / "cover" / "wrap.pdf"
+    if cover_pdf_src.exists():
+        shutil.copy2(cover_pdf_src, out_dir / "cover.pdf")
+    else:
+        log.warning("cover/wrap.pdf not found; output/cover.pdf will be missing")
 
     state.mark_done("format")
     return state
