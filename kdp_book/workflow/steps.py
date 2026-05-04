@@ -50,6 +50,7 @@ async def do_concept(state: IBookState) -> IBookState:
         topic=state.config.topic,
         book_type=state.config.book_type,
         type_config=state.config.type_config,
+        language=state.config.language,
     )
     log.info("Concept: %r — %s", state.concept.title, state.concept.tone)
     state.mark_done("concept")
@@ -65,6 +66,7 @@ async def do_outline(state: IBookState) -> IBookState:
     state.outline = await generate_outline(
         concept=state.concept,
         type_config=state.config.type_config,
+        language=state.config.language,
     )
     log.info("Outline: %d chapters", len(state.outline.chapters))
     state.mark_done("outline")
@@ -81,6 +83,7 @@ async def do_bible(state: IBookState) -> IBookState:
         concept=state.concept,
         outline=state.outline,
         type_config=state.config.type_config,
+        language=state.config.language,
     )
     log.info(
         "Bible: %d characters, %d locations",
@@ -153,6 +156,7 @@ async def do_write(state: IBookState) -> IBookState:
                 chapter=chapter,
                 type_config=state.config.type_config,
                 previous_tail=previous_summary,
+                language=state.config.language,
             )
             path = chapters_dir / f"chapter-{chapter.index:02d}.md"
             tmp = path.with_suffix(path.suffix + ".tmp")
@@ -257,6 +261,7 @@ async def _revise_flagged_chapters(state: IBookState) -> None:
             chapter=revised_chapter,
             type_config=state.config.type_config,
             previous_tail=previous_tail,
+            language=state.config.language,
         )
         drafts_by_index[ch_idx] = new_draft
         path = chapters_dir / f"chapter-{ch_idx:02d}.md"
@@ -480,6 +485,7 @@ async def do_images(state: IBookState) -> IBookState:
             concept=state.concept,
             book_type=state.config.book_type,
             page_text=page_text,
+            language=state.config.language,
         )
         log.info(
             "Rendering page %d (chapter %d, scene %d) with %d refs",
@@ -590,6 +596,7 @@ async def do_cover(state: IBookState) -> IBookState:
             bible=state.bible,
             metadata=state.metadata,
             book_type=state.config.book_type.value,
+            language=state.config.language,
         )
 
     settings = get_settings()
@@ -722,6 +729,7 @@ async def do_metadata(state: IBookState) -> IBookState:
         concept=state.concept,
         bible=state.bible,
         author=state.config.author,
+        language=state.config.language,
     )
     state.metadata = md
     state.mark_done("metadata")

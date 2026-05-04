@@ -9,10 +9,21 @@ INTO the illustration by gpt-image-2 so the typography becomes part of the
 artwork (warm rounded serif, cream/white, large and child-friendly). All
 other book types use composition-only prompts and render text separately
 in the PDF/EPUB.
+
+Composition language (camera, pose, lighting, etc.) stays in English even
+for non-English books — gpt-image-2 reasons about scenes in English. The
+only field that switches to the target language is the verbatim page text
+that gets typeset into the illustration for picture books.
 """
 
 from __future__ import annotations
 
+from kdp_book.agents._language import (
+    HEBREW_BAKED_TEXT_TYPOGRAPHY,
+    is_rtl,
+    language_name,
+    normalize_language,
+)
 from kdp_book.models.book import (
     BookType,
     IBookConcept,
@@ -40,6 +51,14 @@ PICTURE_BOOK_TEXT_TYPOGRAPHY = (
     "Use this exact same typography on every page so the typography reads "
     "as one consistent voice throughout the book."
 )
+
+
+def _typography_block(language: str) -> str:
+    """Return the typography lock for the requested language."""
+    iso = normalize_language(language)
+    if iso == "he":
+        return HEBREW_BAKED_TEXT_TYPOGRAPHY
+    return PICTURE_BOOK_TEXT_TYPOGRAPHY
 
 
 def build_character_sheet_prompt(
@@ -76,14 +95,16 @@ def build_scene_prompt(
     concept: IBookConcept,
     book_type: BookType | None = None,
     page_text: str = "",
+    language: str = "en",
 ) -> str:
     """Composition-only page prompt. Identity is supplied via reference images.
 
     For `BookType.CHILDREN_PICTURE_BOOK`, when `page_text` is provided the
     prompt instructs gpt-image-2 to typeset the text directly into the
-    illustration with the shared `PICTURE_BOOK_TEXT_TYPOGRAPHY` so every
+    illustration with the language-appropriate typography lock so every
     page reads as one cohesive book.
     """
+    iso = normalize_language(language)
     parts: list[str] = [
         f"Illustration in style: {style.art_style}.",
         f"Tone: {style.tone or concept.tone}.",
@@ -112,12 +133,29 @@ def build_scene_prompt(
         # Quote the text so gpt-image-2 renders it verbatim. Use single-line
         # form because picture-book prose is short (≤4 sentences/page).
         flat = " ".join(cleaned.split())
+        lang_label = language_name(iso)
+        rtl_clause = ""
+        if is_rtl(iso):
+            rtl_clause = (
+                f" The text is in {lang_label} and is written RIGHT-TO-LEFT. "
+                f"Render the {lang_label} characters with proper {lang_label} "
+                f"letterforms (real Hebrew/Arabic-script glyphs — NOT Latin, "
+                f"NOT pseudo-script). Maintain right-to-left reading order. "
+                f"Quote the text VERBATIM — do not translate, do not "
+                f"transliterate, do not paraphrase."
+            )
+        elif iso != "en":
+            rtl_clause = (
+                f" The text is in {lang_label}. Render the {lang_label} "
+                f"characters verbatim with proper {lang_label} letterforms. "
+                f"Do not translate or transliterate."
+            )
         parts.append(
-            'PAGE TEXT TO RENDER: typeset the following text directly '
-            'into the illustration, in a clear airy area near the bottom '
-            'of the page (or top if the bottom is busy). Render it '
-            f'verbatim, exactly: "{flat}". '
-            f'Typography: {PICTURE_BOOK_TEXT_TYPOGRAPHY} '
+            f'PAGE TEXT TO RENDER ({lang_label}): typeset the following text '
+            f'directly into the illustration, in a clear airy area near the '
+            f'bottom of the page (or top if the bottom is busy). Render it '
+            f'verbatim, exactly: "{flat}".{rtl_clause} '
+            f'Typography: {_typography_block(iso)} '
             'Leave generous breathing room around the text — do not crowd '
             'it with illustration elements; treat the text panel as a '
             'soft watercolor wash if the background is busy.'

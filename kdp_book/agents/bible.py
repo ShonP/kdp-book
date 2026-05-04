@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from agent_framework import Agent
 
+from kdp_book.agents._language import language_directive
 from kdp_book.client import get_chat_client
 from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
@@ -95,20 +96,22 @@ async def generate_bible(
     concept: IBookConcept,
     outline: IBookOutline,
     type_config: IBookTypeConfig,
+    language: str = "en",
 ) -> IBookBible:
     user_prompt = _build_user_prompt(concept, outline, type_config)
     model = get_settings().copilot_model
+    instructions = SYSTEM_PROMPT + language_directive(language)
     record_prompt(
         agent_name="bible-agent",
         model=model,
-        system=SYSTEM_PROMPT,
+        system=instructions,
         user=user_prompt,
         response_format="IBookBible",
     )
     agent = Agent(
         client=get_chat_client(),
         name="bible-agent",
-        instructions=SYSTEM_PROMPT,
+        instructions=instructions,
         middleware=[llm_call_logging],
     )
     response = await agent.run(

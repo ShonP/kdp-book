@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ebooklib import epub
 
+from kdp_book.agents._language import is_rtl
 from kdp_book.log import log
 from kdp_book.models.book import BookType, IBookState
 
@@ -26,6 +27,8 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
         book.add_metadata("DC", "description", state.concept.subtitle)
 
     is_picture_book = state.config.book_type == BookType.CHILDREN_PICTURE_BOOK
+    rtl = is_rtl(state.config.language)
+    direction = "rtl" if rtl else "ltr"
 
     if state.cover and state.cover.front_image_path:
         front = book_dir / state.cover.front_image_path
@@ -45,7 +48,12 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
             file_name=f"chap_{chapter.index:02d}.xhtml",
             lang=state.config.language,
         )
-        body_parts: list[str] = []
+        body_open = (
+            f'<body dir="{direction}" lang="{state.config.language}">'
+            if rtl
+            else "<body>"
+        )
+        body_parts: list[str] = [body_open]
         if not is_picture_book:
             body_parts.append(f"<h1>{_escape(chapter.title)}</h1>")
         for img_path in images_by_chapter.get(chapter.index, [])[:1]:
@@ -80,6 +88,7 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
                 text = para.strip()
                 if text:
                     body_parts.append(f"<p>{_escape(text)}</p>")
+        body_parts.append("</body>")
         ch_html.set_content("".join(body_parts))
         book.add_item(ch_html)
         chapter_items.append(ch_html)

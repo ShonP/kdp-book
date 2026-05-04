@@ -11,6 +11,12 @@ from __future__ import annotations
 
 from agent_framework import Agent
 
+from kdp_book.agents._language import (
+    is_rtl,
+    language_directive,
+    language_name,
+    normalize_language,
+)
 from kdp_book.client import get_chat_client
 from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
@@ -94,9 +100,33 @@ def _build_user_prompt(
     bible: IBookBible,
     metadata: IBookMetadata | None,
     book_type: str,
+    language: str,
 ) -> str:
     style = bible.style_guide
     blurb = metadata.blurb if metadata else concept.hook
+    iso = normalize_language(language)
+    name = language_name(iso)
+    rtl_block = ""
+    if is_rtl(iso):
+        rtl_block = (
+            f"\nLANGUAGE: {name} (right-to-left, ISO {iso}).\n"
+            f"The title, subtitle, and blurb are in {name}. "
+            f"Your front_prompt and back_prompt MUST instruct gpt-image-2 to:\n"
+            f"  • Render the {name} text using AUTHENTIC {name} letterforms "
+            f"(not Latin, not pseudo-{name}). Pick a {name}-supporting face "
+            f"(e.g. Frank Ruehl, Heebo, Rubik, Assistant, David, Narkis).\n"
+            f"  • Render the text right-to-left with proper {name} letter "
+            f"shaping and spacing.\n"
+            f"  • Quote the exact {name} characters verbatim — do NOT "
+            f"transliterate, do NOT translate.\n"
+        )
+    elif iso != "en":
+        rtl_block = (
+            f"\nLANGUAGE: {name} (ISO {iso}). The title, subtitle, and blurb "
+            f"are in {name}; your front_prompt and back_prompt MUST instruct "
+            f"gpt-image-2 to render that text verbatim, in {name}, with a "
+            f"{name}-supporting typeface.\n"
+        )
     return (
         f"BOOK\n"
         f"Title: {concept.title}\n"
@@ -105,7 +135,8 @@ def _build_user_prompt(
         f"Audience: {concept.audience}\n"
         f"Tone: {concept.tone}\n"
         f"Themes: {', '.join(concept.themes) or 'n/a'}\n"
-        f"Blurb (verbatim — must appear on back cover):\n{blurb}\n\n"
+        f"Blurb (verbatim — must appear on back cover):\n{blurb}\n"
+        f"{rtl_block}\n"
         f"STYLE GUIDE\n"
         f"Art style: {style.art_style}\n"
         f"Tone: {style.tone}\n"
@@ -124,25 +155,33 @@ async def design_cover(
     bible: IBookBible,
     metadata: IBookMetadata | None = None,
     book_type: str,
+    language: str = "en",
 ) -> ICoverDesign:
+    iso = normalize_language(language)
     user_prompt = _build_user_prompt(
         concept=concept,
         bible=bible,
         metadata=metadata,
         book_type=book_type,
+        language=iso,
     )
     model = get_settings().copilot_model
+    # The cover-agent system prompt itself stays English (it instructs
+    # gpt-image-2 in English about the *image*); only spine_text and
+    # typography_notes carry user-facing language, so we still apply the
+    # language directive so those values come back in the target language.
+    instructions = SYSTEM_PROMPT + language_directive(iso)
     record_prompt(
         agent_name="cover-agent",
         model=model,
-        system=SYSTEM_PROMPT,
+        system=instructions,
         user=user_prompt,
         response_format="ICoverDesign",
     )
     agent = Agent(
         client=get_chat_client(),
         name="cover-agent",
-        instructions=SYSTEM_PROMPT,
+        instructions=instructions,
         middleware=[llm_call_logging],
     )
     response = await agent.run(

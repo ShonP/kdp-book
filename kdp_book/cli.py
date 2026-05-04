@@ -14,6 +14,10 @@ warnings.filterwarnings("ignore", category=Warning, module="agent_framework.*")
 
 import click  # noqa: E402
 
+from kdp_book.agents._language import (  # noqa: E402
+    CLI_LANGUAGE_CHOICES,
+    normalize_language,
+)
 from kdp_book.config import get_settings  # noqa: E402
 from kdp_book.log import attach_file_handler, detach_file_handler, log, new_run_id  # noqa: E402
 from kdp_book.models.book import BookType  # noqa: E402
@@ -70,6 +74,12 @@ def doctor() -> None:
 @click.option("--type", "book_type", required=True, type=click.Choice(BOOK_TYPE_CHOICES), help="Book type.")
 @click.option("--resume", default=None, help="Slug of an existing book directory to resume.")
 @click.option("--author", default=None, help="Author/pen name. Defaults to KDP_AUTHOR_NAME.")
+@click.option(
+    "--language",
+    default="english",
+    type=click.Choice(CLI_LANGUAGE_CHOICES, case_sensitive=False),
+    help="Natural language for all reader-facing text. Default: english.",
+)
 @click.option("--no-images", is_flag=True, help="Skip illustrations/cover (cheap text-only smoke test).")
 @click.option(
     "--quality",
@@ -82,6 +92,7 @@ def generate(
     book_type: str,
     resume: str | None,
     author: str | None,
+    language: str,
     no_images: bool,
     quality: str | None,
 ) -> None:
@@ -96,6 +107,7 @@ def generate(
         resume=resume,
         author=author,
         skip_images=no_images,
+        language=normalize_language(language),
     )
     click.echo(click.style(f"\nDone. Output: {book_dir}", fg="green"))
 
@@ -106,12 +118,20 @@ def generate(
 @click.option("--topic", required=True, help="Topic / premise of the book.")
 @click.option("--type", "book_type", required=True, type=click.Choice(BOOK_TYPE_CHOICES), help="Book type.")
 @click.option("--author", default=None, help="Author name.")
-def outline(topic: str, book_type: str, author: str | None) -> None:
+@click.option(
+    "--language",
+    default="english",
+    type=click.Choice(CLI_LANGUAGE_CHOICES, case_sensitive=False),
+    help="Natural language for all reader-facing text. Default: english.",
+)
+def outline(topic: str, book_type: str, author: str | None, language: str) -> None:
     """Generate concept + outline + bible (no writing, no images)."""
-    asyncio.run(_run_outline(topic, BookType(book_type), author))
+    asyncio.run(_run_outline(topic, BookType(book_type), author, normalize_language(language)))
 
 
-async def _run_outline(topic: str, book_type: BookType, author: str | None) -> None:
+async def _run_outline(
+    topic: str, book_type: BookType, author: str | None, language: str,
+) -> None:
     run_id = new_run_id()
     book_dir = resolve_book_dir(topic, book_type)
     attach_file_handler(book_dir)
@@ -131,6 +151,7 @@ async def _run_outline(topic: str, book_type: BookType, author: str | None) -> N
             book_type=book_type,
             type_config=get_book_type_config(book_type),
             author=author or get_settings().kdp_author_name,
+            language=language,
         )
         state = IBookState(slug=book_dir.name, book_dir=str(book_dir), config=cfg)
         save_state(state)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent_framework import Agent
 
+from kdp_book.agents._language import language_directive
 from kdp_book.client import get_chat_client
 from kdp_book.config import get_settings
 from kdp_book.middleware import llm_call_logging
@@ -122,6 +123,7 @@ async def write_chapter(
     chapter: IChapter,
     type_config: IBookTypeConfig,
     previous_tail: str = "",
+    language: str = "en",
 ) -> IChapterDraft:
     """Draft a single chapter. Caller iterates."""
     user_prompt = _build_user_prompt(
@@ -133,17 +135,18 @@ async def write_chapter(
         previous_tail=previous_tail,
     )
     model = get_settings().copilot_model
+    instructions = SYSTEM_PROMPT + language_directive(language)
     record_prompt(
         agent_name="writer-agent",
         model=model,
-        system=SYSTEM_PROMPT,
+        system=instructions,
         user=user_prompt,
         response_format="IChapterDraft",
     )
     agent = Agent(
         client=get_chat_client(),
         name="writer-agent",
-        instructions=SYSTEM_PROMPT,
+        instructions=instructions,
         middleware=[llm_call_logging],
     )
     response = await agent.run(

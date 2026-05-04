@@ -39,8 +39,17 @@ from kdp_book.tools.atomic_io import atomic_write_text
 
 
 def character_slug(name: str) -> str:
-    """Filesystem-safe slug for a character name."""
-    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    """Filesystem-safe slug for a character name.
+
+    Keeps Unicode letters and digits (so Hebrew, Arabic, CJK names survive
+    into the directory tree) while stripping whitespace, punctuation, and
+    other filesystem-unsafe characters. Falls back to 'unnamed' only when
+    the input is empty or contains nothing usable.
+    """
+    raw = (name or "").strip()
+    # Replace any run of non-alphanumeric (Unicode-aware) characters with a
+    # single dash, then trim dashes.
+    s = re.sub(r"[^\w]+", "-", raw, flags=re.UNICODE).strip("-")
     return s or "unnamed"
 
 

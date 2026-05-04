@@ -262,6 +262,7 @@ def _init_state(input_data: dict) -> IBookState:
         book_type=book_type,
         type_config=get_book_type_config(book_type),
         author=input_data.get("author") or get_settings().kdp_author_name,
+        language=input_data.get("language") or "en",
     )
     state = IBookState(slug=book_dir.name, book_dir=str(book_dir), config=config)
     state.skip_images = bool(input_data.get("skip_images", False))
@@ -276,6 +277,7 @@ async def run_book_async(
     resume: str | None = None,
     author: str | None = None,
     skip_images: bool = False,
+    language: str = "en",
 ) -> str:
     """Run the full pipeline. Returns the final book directory path."""
     run_id = new_run_id()
@@ -290,8 +292,10 @@ async def run_book_async(
         slug=book_dir.name,
     )
 
-    log.info("Starting kdp-book: topic=%r type=%s slug=%s skip_images=%s",
-             topic, book_type.value, book_dir.name, skip_images)
+    log.info(
+        "Starting kdp-book: topic=%r type=%s lang=%s slug=%s skip_images=%s",
+        topic, book_type.value, language, book_dir.name, skip_images,
+    )
     log.info("Book directory: %s", book_dir)
 
     checkpoint_dir = book_dir / ".checkpoints"
@@ -305,6 +309,7 @@ async def run_book_async(
                 "book_type": book_type.value,
                 "book_dir": str(book_dir),
                 "author": author or get_settings().kdp_author_name,
+                "language": language,
                 "skip_images": skip_images,
                 "started_at": datetime.now(UTC).isoformat(),
             },
@@ -329,8 +334,13 @@ def run_book(
     resume: str | None = None,
     author: str | None = None,
     skip_images: bool = False,
+    language: str = "en",
 ) -> str:
     """Synchronous wrapper for `run_book_async`."""
     return asyncio.run(run_book_async(
-        topic, book_type, resume=resume, author=author, skip_images=skip_images,
+        topic, book_type,
+        resume=resume,
+        author=author,
+        skip_images=skip_images,
+        language=language,
     ))
