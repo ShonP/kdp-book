@@ -242,8 +242,48 @@ async def _run_edit(slug: str) -> None:
 @main.command()
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 def illustrate(from_slug: str) -> None:
-    """Generate illustrations (Phase 5)."""
-    click.echo("illustrate: not yet implemented (Phase 5)")
+    """Plan + render illustrations (character refs + page art)."""
+    asyncio.run(_run_illustrate(from_slug))
+
+
+async def _run_illustrate(slug: str) -> None:
+    from kdp_book.workflow.steps import do_characters, do_illustrate, do_images
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "illustrate"):
+            state = await do_illustrate(state)
+            save_state(state)
+        with step_recorder(state.book_dir, "characters"):
+            state = await do_characters(state)
+            save_state(state)
+        with step_recorder(state.book_dir, "images"):
+            state = await do_images(state)
+            save_state(state)
+        click.echo(click.style(
+            f"\nIllustrations: {len(state.illustrations)} planned, "
+            f"{len(state.images)} rendered",
+            fg="green",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
 
 
 @main.command()

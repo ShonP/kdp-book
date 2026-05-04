@@ -6,15 +6,36 @@ Each helper wraps exactly one agent invocation. The workflow file
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from kdp_book.agents.bible import generate_bible
 from kdp_book.agents.concept import generate_concept
 from kdp_book.agents.editor import edit_manuscript
+from kdp_book.agents.illustrator import plan_chapter_illustrations
 from kdp_book.agents.outline import generate_outline
 from kdp_book.agents.writer import write_chapter
 from kdp_book.log import log
-from kdp_book.models.book import IBookState, IChapterDraft, IManuscript
+from kdp_book.models.assets import IAssetEntry, IImageAsset
+from kdp_book.models.book import (
+    IBookState,
+    IChapterDraft,
+    IIllustrationBrief,
+    IManuscript,
+    IPageImage,
+)
+from kdp_book.observability import make_image_record, record_image, write_image_sidecar
+from kdp_book.tools.asset_registry import (
+    add_character_variant,
+    add_page_image,
+    get_character_ref,
+)
+from kdp_book.tools.atomic_io import atomic_write_bytes
+from kdp_book.tools.image_gen import render_with_retry
+from kdp_book.tools.prompt_builder import (
+    build_character_sheet_prompt,
+    build_scene_prompt,
+)
 from kdp_book.workflow.state import save_state
 
 
@@ -214,3 +235,225 @@ async def _revise_flagged_chapters(state: IBookState) -> None:
     state.manuscript.chapters = sorted(drafts_by_index.values(), key=lambda c: c.index)
     state.manuscript.total_word_count = sum(c.word_count for c in state.manuscript.chapters)
     save_state(state)
+
+
+async def do_illustrate(state: IBookState) -> IBookState:
+    """Plan composition-only illustration briefs per chapter."""
+    if state.outline is None or state.bible is None or state.concept is None:
+        raise RuntimeError("Cannot illustrate before outline/bible/concept")
+    if state.illustrations and "illustrate" in state.completed_steps:
+        log.debug("Illustrations already planned, skipping")
+        return state
+
+    illustrations_per_chapter = state.config.type_config.illustrations_per_chapter
+    if illustrations_per_chapter <= 0:
+        log.info("Book type %s requests 0 illustrations per chapter; skipping", state.config.book_type.value)
+        state.illustrations = []
+        state.mark_done("illustrate")
+        return state
+
+    all_briefs: list[IIllustrationBrief] = []
+    for chapter in state.outline.chapters:
+        log.info("Planning illustrations for chapter %d", chapter.index)
+        briefs = await plan_chapter_illustrations(
+            concept=state.concept,
+            bible=state.bible,
+            chapter=chapter,
+            illustrations_per_chapter=illustrations_per_chapter,
+        )
+        all_briefs.extend(briefs)
+        # Persist progress so a crash mid-plan resumes correctly.
+        state.illustrations = all_briefs
+        save_state(state)
+
+    log.info("Planned %d illustrations across %d chapters", len(all_briefs), len(state.outline.chapters))
+    state.mark_done("illustrate")
+    return state
+
+
+async def do_characters(state: IBookState) -> IBookState:
+    """Render the `default` reference sheet for every character in the bible."""
+    if state.bible is None:
+        raise RuntimeError("Cannot render characters before bible")
+    if "characters" in state.completed_steps:
+        log.debug("Characters already rendered, skipping")
+        return state
+
+    book_dir = Path(state.book_dir)
+    refs_dir = book_dir / "references" / "characters"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+
+    for character in state.bible.characters:
+        # Skip if already rendered
+        existing = get_character_ref(book_dir, character.name, "default")
+        if existing is not None:
+            log.debug("Character %s/default already rendered, skipping", character.name)
+            continue
+
+        prompt = build_character_sheet_prompt(
+            character_name=character.name,
+            appearance=character.appearance,
+            costume=character.costume,
+            palette=character.palette,
+            style=state.bible.style_guide,
+        )
+        log.info("Rendering character sheet: %s", character.name)
+        try:
+            img_bytes, retry_meta = render_with_retry(
+                prompt=prompt,
+                references=None,
+                size=state.config.type_config.image_size,
+                quality="high",
+                content_rating=_content_rating(state),
+            )
+        except RuntimeError as e:
+            log.error("Failed to render character %s: %s", character.name, e)
+            continue
+
+        safe_name = character.name.lower().replace(" ", "-")
+        rel_path = f"references/characters/{safe_name}__default.png"
+        out_path = book_dir / rel_path
+        atomic_write_bytes(out_path, img_bytes)
+
+        rec = make_image_record(
+            asset_type="character_sheet",
+            name=f"{character.name}/default",
+            path=str(out_path),
+            prompt=prompt,
+            references=[],
+            model="gpt-image-2",
+            size=state.config.type_config.image_size,
+            quality="high",
+            retry_count=len(retry_meta.get("retries", [])),
+            safety_filter_hits=retry_meta.get("safety_filter_hits", 0),
+            duration_seconds=retry_meta.get("duration_seconds", 0.0),
+        )
+        write_image_sidecar(out_path, rec)
+        record_image(rec)
+
+        entry = IAssetEntry(
+            path=rel_path,
+            generated_at=datetime.now(UTC),
+            variant="default",
+            chain_from="",
+            stale=False,
+        )
+        add_character_variant(book_dir, name=character.name, variant="default", entry=entry)
+
+    state.mark_done("characters")
+    return state
+
+
+async def do_images(state: IBookState) -> IBookState:
+    """Render every page image, attaching the right character refs."""
+    if not state.illustrations or state.bible is None or state.concept is None:
+        log.info("No illustrations planned; skipping page renders")
+        state.mark_done("images")
+        return state
+    if "images" in state.completed_steps and len(state.images) >= len(state.illustrations):
+        log.debug("All page images already rendered, skipping")
+        return state
+
+    book_dir = Path(state.book_dir)
+    pages_dir = book_dir / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    rendered_keys = {(img.chapter_index, img.scene_index) for img in state.images}
+
+    page_counter = max([img.page_index for img in state.images], default=0)
+
+    for brief in state.illustrations:
+        key = (brief.chapter_index, brief.scene_index)
+        if key in rendered_keys:
+            continue
+        page_counter += 1
+        brief.page_index = page_counter
+
+        # Resolve refs for every named character present
+        refs: list[Path] = []
+        for char_name in brief.characters_present:
+            ref = get_character_ref(book_dir, char_name, "default")
+            if ref is not None:
+                refs.append(ref)
+            else:
+                log.warning("No reference image for %s; proceeding text-only", char_name)
+
+        prompt = build_scene_prompt(
+            brief=brief,
+            style=state.bible.style_guide,
+            concept=state.concept,
+        )
+        log.info(
+            "Rendering page %d (chapter %d, scene %d) with %d refs",
+            page_counter, brief.chapter_index, brief.scene_index, len(refs),
+        )
+        try:
+            img_bytes, retry_meta = render_with_retry(
+                prompt=prompt,
+                references=refs or None,
+                size=state.config.type_config.image_size,
+                quality="high",
+                content_rating=_content_rating(state),
+            )
+        except RuntimeError as e:
+            log.error(
+                "Failed to render page %d (ch%d sc%d): %s",
+                page_counter, brief.chapter_index, brief.scene_index, e,
+            )
+            continue
+
+        rel_path = f"pages/page-{page_counter:03d}.png"
+        out_path = book_dir / rel_path
+        atomic_write_bytes(out_path, img_bytes)
+
+        rec = make_image_record(
+            asset_type="page",
+            name=f"ch{brief.chapter_index:02d}-sc{brief.scene_index:02d}",
+            path=str(out_path),
+            prompt=prompt,
+            references=refs,
+            model="gpt-image-2",
+            size=state.config.type_config.image_size,
+            quality="high",
+            retry_count=len(retry_meta.get("retries", [])),
+            safety_filter_hits=retry_meta.get("safety_filter_hits", 0),
+            duration_seconds=retry_meta.get("duration_seconds", 0.0),
+        )
+        sidecar = write_image_sidecar(out_path, rec)
+        record_image(rec)
+
+        page_image = IPageImage(
+            chapter_index=brief.chapter_index,
+            scene_index=brief.scene_index,
+            page_index=page_counter,
+            image_path=rel_path,
+            sidecar_path=str(sidecar.relative_to(book_dir)),
+        )
+        state.images.append(page_image)
+
+        # Also record in manifest
+        add_page_image(
+            book_dir,
+            IImageAsset(
+                page_index=page_counter,
+                path=rel_path,
+                prompt=prompt,
+                refs=[str(r.relative_to(book_dir)) for r in refs],
+                generated_at=datetime.now(UTC),
+            ),
+        )
+        save_state(state)
+
+    state.mark_done("images")
+    return state
+
+
+def _content_rating(state: IBookState) -> str:
+    """Map BookType to a content rating for the safety filter softener."""
+    from kdp_book.models.book import BookType
+
+    return {
+        BookType.CHILDREN_PICTURE_BOOK: "all-ages",
+        BookType.LIGHT_NOVEL: "teen",
+        BookType.NON_FICTION: "all-ages",
+        BookType.FICTION_NOVEL: "teen",
+    }.get(state.config.book_type, "all-ages")

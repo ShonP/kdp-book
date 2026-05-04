@@ -41,8 +41,11 @@ from kdp_book.workflow.state import (  # noqa: E402
 )
 from kdp_book.workflow.steps import (  # noqa: E402
     do_bible,
+    do_characters,
     do_concept,
     do_edit,
+    do_illustrate,
+    do_images,
     do_outline,
     do_write,
 )
@@ -99,27 +102,27 @@ async def step_edit(state: IBookState) -> IBookState:
 
 @step
 async def step_illustrate(state: IBookState) -> IBookState:
-    log.info("Step illustrate: not yet implemented (Phase 5)")
+    log.info("Step illustrate: planning page-level briefs")
     with _record(state, "illustrate"):
-        state.mark_done("illustrate")
+        state = await do_illustrate(state)
         save_state(state)
     return state
 
 
 @step
 async def step_characters(state: IBookState) -> IBookState:
-    log.info("Step characters: not yet implemented (Phase 5)")
+    log.info("Step characters: rendering reference sheets")
     with _record(state, "characters"):
-        state.mark_done("characters")
+        state = await do_characters(state)
         save_state(state)
     return state
 
 
 @step
 async def step_images(state: IBookState) -> IBookState:
-    log.info("Step images: not yet implemented (Phase 5)")
+    log.info("Step images: rendering page illustrations")
     with _record(state, "images"):
-        state.mark_done("images")
+        state = await do_images(state)
         save_state(state)
     return state
 
