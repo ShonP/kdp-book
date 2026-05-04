@@ -290,8 +290,41 @@ async def _run_illustrate(slug: str) -> None:
 @click.option("--from", "from_slug", required=True, help="Existing book slug.")
 @click.option("--output", default="both", type=click.Choice(["pdf", "epub", "both"]))
 def format(from_slug: str, output: str) -> None:
-    """Render PDF/EPUB (Phase 7)."""
-    click.echo(f"format ({output}): not yet implemented (Phase 7)")
+    """Render PDF and/or EPUB into the book's output/ directory."""
+    asyncio.run(_run_format(from_slug, output))
+
+
+async def _run_format(slug: str, output: str) -> None:
+    from kdp_book.workflow.steps import do_format
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "format"):
+            state = await do_format(state, output=output)
+            save_state(state)
+        click.echo(click.style(
+            f"\nOutput written to: {book_dir / 'output'}",
+            fg="green",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
 
 
 @main.command()

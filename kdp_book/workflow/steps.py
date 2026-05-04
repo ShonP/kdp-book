@@ -568,3 +568,27 @@ async def do_cover(state: IBookState) -> IBookState:
     state.cover.composed_path = str(composed.relative_to(book_dir))
     state.mark_done("cover")
     return state
+
+
+async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
+    """Render PDF and/or EPUB into books/<slug>/output/."""
+    from kdp_book.formats.epub_builder import build_epub
+    from kdp_book.formats.pdf_interior import build_interior_pdf
+
+    if state.manuscript is None or not state.manuscript.chapters:
+        raise RuntimeError("Cannot format before write")
+    if "format" in state.completed_steps:
+        log.debug("Format already done, skipping")
+        return state
+
+    book_dir = Path(state.book_dir)
+    out_dir = book_dir / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if output in ("pdf", "both"):
+        build_interior_pdf(state, out_dir / "interior.pdf")
+    if output in ("epub", "both"):
+        build_epub(state, out_dir / f"{state.slug}.epub")
+
+    state.mark_done("format")
+    return state

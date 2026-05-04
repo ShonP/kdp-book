@@ -45,6 +45,7 @@ from kdp_book.workflow.steps import (  # noqa: E402
     do_concept,
     do_cover,
     do_edit,
+    do_format,
     do_illustrate,
     do_images,
     do_outline,
@@ -148,9 +149,9 @@ async def step_cover(state: IBookState) -> IBookState:
 
 @step
 async def step_format(state: IBookState) -> IBookState:
-    log.info("Step format: not yet implemented (Phase 7)")
+    log.info("Step format: rendering PDF + EPUB")
     with _record(state, "format"):
-        state.mark_done("format")
+        state = await do_format(state, output="both")
         save_state(state)
     return state
 
