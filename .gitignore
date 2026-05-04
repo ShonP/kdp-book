@@ -1,0 +1,49 @@
+# Generated artifacts
+books/
+checkpoints/
+reports/
+*.pdf
+*.epub
+*.png
+!docs/**/*.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# uv
+uv.lock
