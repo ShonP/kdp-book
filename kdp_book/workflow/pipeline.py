@@ -48,7 +48,9 @@ from kdp_book.workflow.steps import (  # noqa: E402
     do_format,
     do_illustrate,
     do_images,
+    do_metadata,
     do_outline,
+    do_quality,
     do_write,
 )
 
@@ -158,18 +160,18 @@ async def step_format(state: IBookState) -> IBookState:
 
 @step
 async def step_metadata(state: IBookState) -> IBookState:
-    log.info("Step metadata: not yet implemented (Phase 8)")
+    log.info("Step metadata: generating KDP listing metadata")
     with _record(state, "metadata"):
-        state.mark_done("metadata")
+        state = await do_metadata(state)
         save_state(state)
     return state
 
 
 @step
 async def step_quality(state: IBookState) -> IBookState:
-    log.info("Step quality: not yet implemented (Phase 8)")
+    log.info("Step quality: final quality review")
     with _record(state, "quality"):
-        state.mark_done("quality")
+        state = await do_quality(state)
         save_state(state)
     return state
 

@@ -592,3 +592,39 @@ async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
 
     state.mark_done("format")
     return state
+
+
+async def do_metadata(state: IBookState) -> IBookState:
+    from kdp_book.agents.metadata import generate_metadata
+
+    if state.concept is None or state.bible is None:
+        raise RuntimeError("Cannot generate metadata before concept + bible")
+    if state.metadata is not None and "metadata" in state.completed_steps:
+        log.debug("Metadata already done, skipping")
+        return state
+
+    md = await generate_metadata(
+        concept=state.concept,
+        bible=state.bible,
+        author=state.config.author,
+    )
+    state.metadata = md
+    state.mark_done("metadata")
+    return state
+
+
+async def do_quality(state: IBookState) -> IBookState:
+    from kdp_book.agents.quality import quality_review
+
+    if state.concept is None or state.bible is None or state.manuscript is None:
+        raise RuntimeError("Cannot run quality before concept+bible+manuscript")
+
+    report = await quality_review(
+        concept=state.concept,
+        bible=state.bible,
+        manuscript=state.manuscript,
+        metadata=state.metadata,
+    )
+    state.quality_report = report
+    state.mark_done("quality")
+    return state

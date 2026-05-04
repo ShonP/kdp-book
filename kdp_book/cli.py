@@ -377,6 +377,92 @@ def step(slug: str, step_name: str, force: bool) -> None:
 
 
 @main.command()
+@click.option("--from", "from_slug", required=True, help="Existing book slug.")
+def metadata(from_slug: str) -> None:
+    """Generate KDP listing metadata (title, blurb, keywords, BISAC)."""
+    asyncio.run(_run_metadata(from_slug))
+
+
+async def _run_metadata(slug: str) -> None:
+    from kdp_book.workflow.steps import do_metadata
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "metadata"):
+            state = await do_metadata(state)
+            save_state(state)
+        md = state.metadata
+        click.echo(click.style(
+            f"\nMetadata generated:\n  title:    {md.title}\n"
+            f"  keywords: {', '.join(md.keywords)}\n"
+            f"  BISAC:    {', '.join(md.bisac_categories)}",
+            fg="green",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
+
+
+@main.command()
+@click.option("--from", "from_slug", required=True, help="Existing book slug.")
+def quality(from_slug: str) -> None:
+    """Run the final quality review."""
+    asyncio.run(_run_quality(from_slug))
+
+
+async def _run_quality(slug: str) -> None:
+    from kdp_book.workflow.steps import do_quality
+
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+
+    attach_file_handler(book_dir)
+    reset_step_counter()
+    init_run_metadata(
+        book_dir=book_dir,
+        run_id=new_run_id(),
+        topic=state.config.topic,
+        book_type=state.config.book_type.value,
+        slug=state.slug,
+    )
+    try:
+        with step_recorder(state.book_dir, "quality"):
+            state = await do_quality(state)
+            save_state(state)
+        report = state.quality_report
+        click.echo(click.style(
+            f"\nQuality review: score {report.score}/10\n"
+            f"  blockers: {len(report.blockers)}\n"
+            f"  concerns: {len(report.concerns)}",
+            fg="green" if report.score >= 7 else "yellow",
+        ))
+        finalize_run_metadata(book_dir, status="ok")
+    except Exception:
+        finalize_run_metadata(book_dir, status="failed")
+        raise
+    finally:
+        detach_file_handler()
+
+
+@main.command()
 @click.argument("slug")
 def status(slug: str) -> None:
     """Show pipeline progress for an existing slug."""
