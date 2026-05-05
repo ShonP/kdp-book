@@ -239,10 +239,119 @@ async def _run_write(slug: str) -> None:
 
 
 @main.command()
-@click.option("--from", "from_slug", required=True, help="Existing book slug.")
-def edit(from_slug: str) -> None:
-    """Run the editorial review on a drafted manuscript."""
-    asyncio.run(_run_edit(from_slug))
+@click.argument("slug", required=False)
+@click.option("--from", "from_slug", help="Existing book slug (legacy form of SLUG).")
+@click.option("--title", "new_title", help="Set a new title (updates concept.title).")
+@click.option(
+    "--subtitle",
+    "new_subtitle",
+    help="Set a new subtitle (use empty string '' to clear).",
+)
+@click.option(
+    "--show",
+    is_flag=True,
+    help="Show current title/subtitle/cover characters and exit.",
+)
+def edit(
+    slug: str | None,
+    from_slug: str | None,
+    new_title: str | None,
+    new_subtitle: str | None,
+    show: bool,
+) -> None:
+    """Edit book metadata, or run the editorial review on a draft.
+
+    Examples:
+
+      kdp-book edit my-book-slug --show
+
+      kdp-book edit my-book-slug --title "New Title" --subtitle "New Subtitle"
+
+      kdp-book edit --from my-book-slug      # run editorial review
+    """
+    is_metadata_edit = show or new_title is not None or new_subtitle is not None
+    if is_metadata_edit:
+        target = slug or from_slug
+        if not target:
+            raise click.UsageError(
+                "Provide a book SLUG when using --show / --title / --subtitle."
+            )
+        _run_concept_edit(
+            slug=target,
+            new_title=new_title,
+            new_subtitle=new_subtitle,
+            show=show,
+        )
+        return
+
+    target = slug or from_slug
+    if not target:
+        raise click.UsageError(
+            "Provide a book SLUG (or pass --from <slug>) for the editorial review."
+        )
+    asyncio.run(_run_edit(target))
+
+
+def _run_concept_edit(
+    *,
+    slug: str,
+    new_title: str | None,
+    new_subtitle: str | None,
+    show: bool,
+) -> None:
+    book_dir = _slug_to_book_dir(slug)
+    state = load_state(book_dir)
+    if state is None:
+        raise click.UsageError(f"No book.json at {book_dir}")
+    if state.concept is None:
+        raise click.UsageError(
+            f"book.json at {book_dir} has no concept yet — run `kdp-book outline` first."
+        )
+
+    if show and new_title is None and new_subtitle is None:
+        cover = state.cover
+        click.echo(click.style(f"Slug:     {state.slug}", fg="cyan"))
+        click.echo(f"Title:    {state.concept.title}")
+        click.echo(f"Subtitle: {state.concept.subtitle or '(none)'}")
+        click.echo(f"Audience: {state.concept.audience}")
+        click.echo(f"Tone:     {state.concept.tone}")
+        click.echo(f"Themes:   {', '.join(state.concept.themes) or '(none)'}")
+        if cover is not None:
+            chars = ", ".join(cover.characters_on_cover) or "(none)"
+            click.echo(f"Cover characters: {chars}")
+        return
+
+    changes: list[tuple[str, str, str]] = []
+    if new_title is not None:
+        old = state.concept.title
+        if old != new_title:
+            state.concept.title = new_title
+            changes.append(("title", old, new_title))
+    if new_subtitle is not None:
+        old = state.concept.subtitle or ""
+        normalised = new_subtitle or ""
+        if old != normalised:
+            state.concept.subtitle = normalised
+            changes.append(("subtitle", old or "(none)", normalised or "(none)"))
+
+    if not changes:
+        click.echo("No changes — values match what's already in book.json.")
+        if show:
+            click.echo(f"Title:    {state.concept.title}")
+            click.echo(f"Subtitle: {state.concept.subtitle or '(none)'}")
+        return
+
+    save_state(state)
+    click.echo(click.style(f"Updated {book_dir / 'book.json'}", fg="green"))
+    for field, old, new in changes:
+        click.echo(f"  {field}: {old}  →  {new}")
+    click.echo(
+        click.style(
+            "Run `kdp-book cover " + slug + " --force` to regenerate the cover "
+            "with the new title.",
+            fg="yellow",
+        )
+    )
 
 
 async def _run_edit(slug: str) -> None:
