@@ -259,6 +259,7 @@ class ICoverDesign(BaseModel):
     spine_text: str = ""
     typography_notes: str = ""
     palette: list[str] = Field(default_factory=list)
+    characters_on_cover: list[str] = Field(default_factory=list)
     front_image_path: str = ""
     back_image_path: str = ""
     composed_path: str = ""

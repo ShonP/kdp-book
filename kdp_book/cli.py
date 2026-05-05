@@ -373,13 +373,27 @@ async def _run_format(slug: str, output: str) -> None:
 
 
 @main.command()
-@click.option("--from", "from_slug", required=True, help="Existing book slug.")
-def cover(from_slug: str) -> None:
+@click.argument("slug", required=False)
+@click.option("--from", "from_slug", default=None, help="(deprecated) Existing book slug; prefer the positional SLUG argument.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-render the cover from scratch: clears front/back/wrap, drops the "
+    "cover step from completed_steps, regenerates with character references, "
+    "and refreshes output/cover.pdf. Other artifacts (chapters, interior, "
+    "metadata) are not touched.",
+)
+def cover(slug: str | None, from_slug: str | None, force: bool) -> None:
     """Design + render + compose the print-ready cover wrap."""
-    asyncio.run(_run_cover(from_slug))
+    target = slug or from_slug
+    if target is None:
+        raise click.UsageError("Provide a slug: `kdp-book cover SLUG [--force]`")
+    asyncio.run(_run_cover(target, force=force))
 
 
-async def _run_cover(slug: str) -> None:
+async def _run_cover(slug: str, *, force: bool = False) -> None:
+    import shutil
+
     from kdp_book.workflow.steps import do_cover
 
     book_dir = _slug_to_book_dir(slug)
@@ -397,13 +411,44 @@ async def _run_cover(slug: str) -> None:
         slug=state.slug,
     )
     try:
+        if force:
+            cover_dir = book_dir / "cover"
+            for stale in (
+                cover_dir / "front.png",
+                cover_dir / "front.png.json",
+                cover_dir / "back.png",
+                cover_dir / "back.png.json",
+                cover_dir / "wrap.png",
+                cover_dir / "wrap.pdf",
+            ):
+                if stale.exists():
+                    stale.unlink()
+            state.cover = None
+            state.completed_steps = [s for s in state.completed_steps if s != "cover"]
+            click.echo("Cleared existing cover artifacts; regenerating from scratch.")
+
         with step_recorder(state.book_dir, "cover"):
             state = await do_cover(state)
             save_state(state)
+
+        cover_pdf = book_dir / "cover" / "wrap.pdf"
+        if cover_pdf.exists():
+            out_dir = book_dir / "output"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cover_pdf, out_dir / "cover.pdf")
+            click.echo(click.style(
+                f"Refreshed {out_dir / 'cover.pdf'}", fg="green",
+            ))
+
         click.echo(click.style(
             f"\nCover composed: {state.cover.composed_path}",
             fg="green",
         ))
+        if state.cover.characters_on_cover:
+            click.echo(
+                "Characters on cover: "
+                + ", ".join(state.cover.characters_on_cover),
+            )
         finalize_run_metadata(book_dir, status="ok")
     except Exception:
         finalize_run_metadata(book_dir, status="failed")

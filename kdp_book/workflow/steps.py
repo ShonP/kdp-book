@@ -571,6 +571,40 @@ def _content_rating(state: IBookState) -> str:
     }.get(state.config.book_type, "all-ages")
 
 
+MAX_COVER_CHARACTER_REFS = 3
+
+
+def _resolve_cover_character_refs(
+    book_dir: Path, state: IBookState,
+) -> list[Path]:
+    """Resolve `default.png` reference paths for characters featured on the cover.
+
+    Priority:
+      1. Names listed in `state.cover.characters_on_cover` (CoverAgent's pick).
+      2. Fallback to the bible's first character (typically the protagonist)
+         when the agent didn't choose any. Cover always benefits from at least
+         one character ref so faces line up with the interior illustrations.
+    Caps at `MAX_COVER_CHARACTER_REFS` to keep the gpt-image-2 edit payload
+    small and conditioning focused.
+    """
+    if state.cover is None:
+        return []
+    chosen: list[str] = []
+    for n in state.cover.characters_on_cover:
+        if n and n not in chosen:
+            chosen.append(n)
+    if not chosen and state.bible and state.bible.characters:
+        chosen = [state.bible.characters[0].name]
+    refs: list[Path] = []
+    for name in chosen[:MAX_COVER_CHARACTER_REFS]:
+        ref = get_character_ref(book_dir, name, "default")
+        if ref is not None:
+            refs.append(ref)
+        else:
+            log.warning("No character reference for %r; cover will skip it", name)
+    return refs
+
+
 async def do_cover(state: IBookState) -> IBookState:
     """Design + render front (and optional back) cover, then compose the wrap.
 
@@ -607,15 +641,30 @@ async def do_cover(state: IBookState) -> IBookState:
     front_path = cover_dir / "front.png"
     back_path: Path | None = cover_dir / "back.png" if state.cover.back_prompt else None
 
-    async def render_panel(panel: str, dest: Path, prompt: str, asset_type: str):
+    front_refs = _resolve_cover_character_refs(book_dir, state)
+    if front_refs:
+        log.info(
+            "Cover: conditioning front on %d character ref(s): %s",
+            len(front_refs), ", ".join(p.name for p in front_refs),
+        )
+    else:
+        log.info("Cover: no character refs resolved; rendering front prompt-only")
+
+    async def render_panel(
+        panel: str,
+        dest: Path,
+        prompt: str,
+        asset_type: str,
+        refs: list[Path],
+    ):
         if dest.exists():
             return dest, None, None
-        log.info("Rendering %s cover", panel)
+        log.info("Rendering %s cover (%d refs)", panel, len(refs))
         try:
             img_bytes, retry_meta = await asyncio.to_thread(
                 render_with_retry,
                 prompt=prompt,
-                references=None,
+                references=refs or None,
                 size=size,
                 quality=quality,
                 content_rating=rating,
@@ -629,7 +678,7 @@ async def do_cover(state: IBookState) -> IBookState:
             name=f"cover/{panel}",
             path=str(dest),
             prompt=prompt,
-            references=[],
+            references=refs,
             model="gpt-image-2",
             size=size,
             quality=quality,
@@ -640,9 +689,17 @@ async def do_cover(state: IBookState) -> IBookState:
         write_image_sidecar(dest, rec)
         return dest, rec, prompt
 
-    tasks = [render_panel("front", front_path, state.cover.front_prompt, "cover_front")]
+    tasks = [
+        render_panel(
+            "front", front_path, state.cover.front_prompt, "cover_front", front_refs,
+        )
+    ]
     if back_path is not None:
-        tasks.append(render_panel("back", back_path, state.cover.back_prompt, "cover_back"))
+        tasks.append(
+            render_panel(
+                "back", back_path, state.cover.back_prompt, "cover_back", [],
+            )
+        )
 
     results = await asyncio.gather(*tasks)
 

@@ -82,6 +82,15 @@ palette
   3-5 hex colors that anchor the cover. Front + spine + back pull from
   this palette.
 
+characters_on_cover
+  EXACT names (verbatim, matching the bible) of the 1-2 characters who
+  appear on the FRONT cover illustration. Choose only characters that
+  the front_prompt actually depicts as visible figures — typically the
+  protagonist plus optionally one major supporting character. If the
+  front cover is non-figurative (no characters), return an empty list.
+  These names drive reference-image conditioning so the cover characters
+  match the interior illustrations exactly.
+
 CRITICAL
 - The front_prompt and back_prompt MUST quote the exact title, subtitle,
   and blurb text the user provides. Wrap each in quotation marks inside
@@ -127,6 +136,14 @@ def _build_user_prompt(
             f"gpt-image-2 to render that text verbatim, in {name}, with a "
             f"{name}-supporting typeface.\n"
         )
+    cast_lines: list[str] = []
+    for ch in bible.characters:
+        descriptor = ch.appearance or ch.role or ""
+        descriptor = descriptor.strip().replace("\n", " ")
+        if len(descriptor) > 160:
+            descriptor = descriptor[:157] + "…"
+        cast_lines.append(f"  • {ch.name} — {descriptor}" if descriptor else f"  • {ch.name}")
+    cast_block = "\n".join(cast_lines) if cast_lines else "  (no named characters)"
     return (
         f"BOOK\n"
         f"Title: {concept.title}\n"
@@ -137,6 +154,9 @@ def _build_user_prompt(
         f"Themes: {', '.join(concept.themes) or 'n/a'}\n"
         f"Blurb (verbatim — must appear on back cover):\n{blurb}\n"
         f"{rtl_block}\n"
+        f"CAST (use these EXACT names in characters_on_cover; spell them "
+        f"verbatim in front_prompt as well so the renderer ties them to the "
+        f"reference images):\n{cast_block}\n\n"
         f"STYLE GUIDE\n"
         f"Art style: {style.art_style}\n"
         f"Tone: {style.tone}\n"
@@ -145,7 +165,9 @@ def _build_user_prompt(
         f"Produce an ICoverDesign whose front_prompt and back_prompt instruct "
         f"gpt-image-2 to RENDER the title, subtitle, and blurb text directly "
         f"into the artwork (no separate overlay). The author name MUST NOT "
-        f"appear anywhere on the front or back cover."
+        f"appear anywhere on the front or back cover. Populate "
+        f"characters_on_cover with the EXACT names from the cast above for "
+        f"every character whose figure appears on the FRONT illustration."
     )
 
 
