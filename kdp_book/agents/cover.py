@@ -37,12 +37,19 @@ OUTPUT — ICoverDesign
 front_prompt
   A complete image prompt for the FRONT cover panel.
   REQUIREMENTS the prompt MUST instruct the renderer to do:
-  • Render the exact title text (provided below) prominently and beautifully
-    integrated into the artwork — describe the typography (e.g. "warm hand-
-    lettered serif, cream against deep brown, slight letter-press texture",
-    or "bold rounded sans-serif in glowing gold with a thin outline").
-  • Render the exact subtitle text below the title, smaller, in a
-    complementary face. Skip if there is no subtitle.
+  • Render the exact title text (provided below) LARGE, BOLD, and
+    PROMINENT — it must be the single most legible element on the cover.
+    Place it in a clear zone (typically the top one-third) where NOTHING
+    occludes it: no characters, props, foliage, hands, or scenery may
+    overlap, cross, or obscure any letter. Reserve negative space behind
+    the title (a soft wash, banner, halo, or simple shape) so every
+    letter reads instantly from a thumbnail-sized preview. Describe the
+    typography (e.g. "warm hand-lettered serif, cream against deep brown,
+    slight letter-press texture", or "bold rounded sans-serif in glowing
+    gold with a thin outline").
+  • Render the exact subtitle text below the title, noticeably smaller
+    but still fully legible, in a complementary face — also unobscured.
+    Skip if there is no subtitle.
   • DO NOT render the author name, byline, "by ___", or any author credit
     on the front cover. Front carries title + subtitle ONLY.
   • Describe the illustration: scene, palette, lighting, mood, composition.

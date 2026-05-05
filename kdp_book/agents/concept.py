@@ -18,6 +18,13 @@ self-published Kindle Direct Publishing (KDP) title.
 
 Rules:
 - The title must be specific, evocative, and ≤ 60 characters.
+- For children's picture books: the title MUST be 2-5 SIMPLE words a
+  young child would understand. NO technical jargon (e.g. "STEM",
+  "coding", "algorithms", "loops", "fractions", "equations"). Aim for
+  warm, magical, child-friendly language — concrete nouns, vivid verbs,
+  characters or feelings ("Robo Finds a Friend", "The Counting Cat",
+  "Maya and the Star Garden"). The subtitle, if any, must also avoid
+  technical jargon and stay child-friendly.
 - The subtitle (if any) must add a clear hook, not restate the title.
 - The hook is one paragraph (≤ 60 words) that would sell the book in a
   KDP description's opening.
