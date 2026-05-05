@@ -140,8 +140,8 @@ missing config.
 ```ini
 # Required
 AZURE_API_KEY=sk-...
-OPENAI_BASE_URL=https://your-azure-endpoint.openai.azure.com/openai/deployments/gpt-5.5/chat/completions?api-version=...
-AZURE_IMAGE_ENDPOINT=https://your-azure-endpoint.cognitiveservices.azure.com/openai/deployments/gpt-image-2/images/generations?api-version=2024-02-01
+OPENAI_BASE_URL=https://your-endpoint
+AZURE_IMAGE_ENDPOINT=https://your-azure-endpoint.openai.azure.com/openai/deployments/gpt-image-2/images/generations?api-version=2024-02-01
 
 # Optional overrides (with defaults)
 MODEL=gpt-5.5
