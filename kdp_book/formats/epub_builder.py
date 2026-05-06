@@ -33,7 +33,8 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
     if state.cover and state.cover.front_image_path:
         front = book_dir / state.cover.front_image_path
         if front.exists():
-            book.set_cover("cover.png", front.read_bytes())
+            cover_filename = f"cover{front.suffix.lower() or '.png'}"
+            book.set_cover(cover_filename, front.read_bytes())
 
     images_by_chapter: dict[int, list[str]] = {}
     for img in state.images:
@@ -63,7 +64,7 @@ def build_epub(state: IBookState, output_path: Path) -> Path:
                 book.add_item(epub.EpubImage(
                     uid=epub_img_name,
                     file_name=epub_img_name,
-                    media_type="image/png",
+                    media_type=_image_media_type(full),
                     content=full.read_bytes(),
                 ))
                 img_style = (
@@ -110,3 +111,15 @@ def _escape(text: str) -> str:
         text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\n", "<br/>")
     )
+
+
+def _image_media_type(path: Path) -> str:
+    """Map common image extensions to the EPUB media-type they require."""
+    ext = path.suffix.lower()
+    return {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }.get(ext, "image/png")

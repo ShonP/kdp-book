@@ -284,13 +284,24 @@ books/<slug>/
 ├── run_metadata.json        # run totals: tokens, cost, status per step
 └── output/                  # the KDP-ready package
     ├── interior.pdf
+    ├── interior-compressed.pdf   # ~3-5% of original (JPEG q=85, max 1200px)
     ├── interior.epub
+    ├── <slug>-compressed.epub    # ~5% of original
     ├── cover.pdf
+    ├── cover-compressed.pdf
     └── kdp.json
 ```
 
 `output/` is the whole deliverable — drop it into KDP's "Add a new title"
 flow.
+
+**Compressed counterparts.** The `format` step always emits both a
+print-ready full-quality PDF/EPUB and a lightweight `*-compressed.*`
+sibling. Compression downsamples every embedded illustration to
+≤1200px on the long edge and re-encodes as JPEG quality 85 — typically
+shrinking a 180MB picture-book interior to 6-10MB without visibly
+degrading on-screen reading. Upload the originals to KDP; share the
+compressed variants for review / preview / email.
 
 ---
 

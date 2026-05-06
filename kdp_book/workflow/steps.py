@@ -741,9 +741,25 @@ async def do_cover(state: IBookState) -> IBookState:
 
 
 async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
-    """Render PDF + EPUB + cover.pdf into books/<slug>/output/."""
+    """Render PDF + EPUB + cover.pdf into books/<slug>/output/.
+
+    Always emits both full-quality and compressed counterparts:
+
+      * `interior.pdf`            +  `interior-compressed.pdf`
+      * `cover.pdf`               +  `cover-compressed.pdf`
+      * `<slug>.epub`             +  `<slug>-compressed.epub`
+
+    Compressed variants downscale embedded images to ≤1200px on the long
+    edge and re-encode them as JPEG q=85, typically dropping a 150-200MB
+    interior to ~20-30MB without visibly affecting on-screen reading.
+    """
     import shutil
 
+    from kdp_book.formats.compress import (
+        compress_cover_pdf,
+        compress_epub,
+        compress_interior_pdf,
+    )
     from kdp_book.formats.epub_builder import build_epub
     from kdp_book.formats.pdf_interior import build_interior_pdf
 
@@ -758,19 +774,46 @@ async def do_format(state: IBookState, *, output: str = "both") -> IBookState:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if output in ("pdf", "both"):
-        build_interior_pdf(state, out_dir / "interior.pdf")
+        interior_pdf = out_dir / "interior.pdf"
+        build_interior_pdf(state, interior_pdf)
+        compress_interior_pdf(state, out_dir / "interior-compressed.pdf")
+        _log_size_pair(interior_pdf, out_dir / "interior-compressed.pdf")
     if output in ("epub", "both"):
-        build_epub(state, out_dir / f"{state.slug}.epub")
+        epub_path = out_dir / f"{state.slug}.epub"
+        build_epub(state, epub_path)
+        compress_epub(state, out_dir / f"{state.slug}-compressed.epub")
+        _log_size_pair(epub_path, out_dir / f"{state.slug}-compressed.epub")
 
     # Expose the print-ready cover wrap at output/cover.pdf alongside the interior.
     cover_pdf_src = book_dir / "cover" / "wrap.pdf"
+    cover_png_src = book_dir / "cover" / "wrap.png"
     if cover_pdf_src.exists():
         shutil.copy2(cover_pdf_src, out_dir / "cover.pdf")
+        if cover_png_src.exists():
+            compress_cover_pdf(cover_png_src, out_dir / "cover-compressed.pdf")
+            _log_size_pair(out_dir / "cover.pdf", out_dir / "cover-compressed.pdf")
+        else:
+            log.warning("cover/wrap.png not found; skipping cover-compressed.pdf")
     else:
         log.warning("cover/wrap.pdf not found; output/cover.pdf will be missing")
 
     state.mark_done("format")
     return state
+
+
+def _log_size_pair(full: Path, compressed: Path) -> None:
+    """Emit a single info line comparing full vs compressed file size."""
+    if not full.exists() or not compressed.exists():
+        return
+    full_mb = full.stat().st_size / (1024 * 1024)
+    comp_mb = compressed.stat().st_size / (1024 * 1024)
+    if full_mb <= 0:
+        return
+    ratio = comp_mb / full_mb
+    log.info(
+        "Compression: %s %.1fMB → %s %.1fMB (%.0f%% of original)",
+        full.name, full_mb, compressed.name, comp_mb, ratio * 100,
+    )
 
 
 async def do_metadata(state: IBookState) -> IBookState:
