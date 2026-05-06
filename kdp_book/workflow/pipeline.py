@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import warnings
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from kdp_book.observability import (  # noqa: E402
 )
 from kdp_book.workflow.state import (  # noqa: E402
     load_state,
+    rename_book_dir_for_title,
     resolve_book_dir,
     save_state,
 )
@@ -54,9 +56,47 @@ from kdp_book.workflow.steps import (  # noqa: E402
     do_write,
 )
 
+_active_storage: ContextVar[FileCheckpointStorage | None] = ContextVar(
+    "_active_storage", default=None,
+)
+
 
 def _record(state: IBookState, step_name: str):
     return step_recorder(state.book_dir, step_name)
+
+
+def _rename_dir_after_concept(state: IBookState) -> IBookState:
+    """Rename `<book_dir>` to use the title-derived slug now that concept is known.
+
+    Called from `step_concept` immediately after `do_concept`. Updates:
+      * the directory on disk
+      * `state.book_dir` and `state.slug` (persisted via `rename_book_dir_for_title`)
+      * the active `FileCheckpointStorage.storage_path` so subsequent
+        framework checkpoints land in the renamed directory
+      * the file log handler so subsequent log lines target the new path
+    """
+    if state.concept is None or not state.concept.title:
+        return state
+    rename = rename_book_dir_for_title(state, state.concept.title)
+    if rename is None:
+        return state
+    old_path, new_path = rename
+
+    storage = _active_storage.get()
+    if storage is not None:
+        old_storage_path = Path(storage.storage_path)
+        try:
+            relative = old_storage_path.relative_to(old_path)
+            storage.storage_path = new_path / relative
+            storage.storage_path.mkdir(parents=True, exist_ok=True)
+        except ValueError:
+            log.debug(
+                "Storage path %s is not inside renamed dir %s; leaving untouched",
+                old_storage_path, old_path,
+            )
+
+    attach_file_handler(new_path)
+    return state
 
 
 @step
@@ -65,6 +105,7 @@ async def step_concept(state: IBookState) -> IBookState:
     with _record(state, "concept"):
         state = await do_concept(state)
         save_state(state)
+    state = _rename_dir_after_concept(state)
     return state
 
 
@@ -301,6 +342,7 @@ async def run_book_async(
     checkpoint_dir = book_dir / ".checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     storage = FileCheckpointStorage(str(checkpoint_dir))
+    _active_storage.set(storage)
 
     try:
         result = await book_workflow.run(
@@ -317,14 +359,38 @@ async def run_book_async(
         )
         outputs = result.get_outputs() if hasattr(result, "get_outputs") else []
         log.info("Pipeline complete (%d outputs)", len(outputs) if outputs else 0)
-        finalize_run_metadata(book_dir, status="ok")
-        return str(book_dir)
+        final_book_dir = _resolve_final_book_dir(book_dir, storage)
+        finalize_run_metadata(final_book_dir, status="ok")
+        return str(final_book_dir)
     except Exception:
         log.exception("Pipeline failed")
-        finalize_run_metadata(book_dir, status="failed")
+        final_book_dir = _resolve_final_book_dir(book_dir, storage)
+        finalize_run_metadata(final_book_dir, status="failed")
         raise
     finally:
+        _active_storage.set(None)
         detach_file_handler()
+
+
+def _resolve_final_book_dir(
+    original: Path, storage: FileCheckpointStorage,
+) -> Path:
+    """Return the current location of the book directory.
+
+    `step_concept` may have renamed the directory after the concept step
+    succeeded; the active `FileCheckpointStorage.storage_path` is the
+    most reliable witness because it is patched in lockstep with the
+    rename. Falls back to `original` if the storage path is unrelated
+    or missing.
+    """
+    try:
+        sp = Path(storage.storage_path)
+        candidate = sp.parent
+        if candidate.exists() and candidate != original:
+            return candidate
+    except Exception as e:
+        log.debug("Could not derive final book dir from storage: %s", e)
+    return original
 
 
 def run_book(
